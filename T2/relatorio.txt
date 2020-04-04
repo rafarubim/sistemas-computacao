@@ -1,0 +1,358 @@
+/***********************************************************************
+*	Programa:	Simulador de memória virtual
+*	Arquivo:	sim-virtual.c
+*	Projeto:	PUC-Rio, Trabalho de INF1019, professor Markus Endler
+*	Data de entrega:	21/06/2017
+*	Autores:
+*		rrc	-	Rafael Rubim Cabral					- matrícula 1511068
+*		gab	-	Gabriel de Andrade Busquim	-	matrícula 1510549
+*	Arquivo do relatório:	relatorio.txt
+***********************************************************************/
+
+Enunciado do trabalho:
+http://www-di.inf.puc-rio.br/~endler/courses/inf1019/17.1/Trab2-2017.pdf
+Arquivos .log utilizados nos testes:
+http://www-di.inf.puc-rio.br/~endler//courses/inf1019//transp/Arquivos-Logs-T2/Arquivos-Log-T2-MemVirtual.zip
+
+		->	Resumo do Projeto
+	
+	Nosso trabalho é um simulador do mapeamento de endereços virtuais-físicos através da memória virtual e da paginação por demanda que é feita pelo gerenciador de memória de um sistema operacional. A base do progama é um loop que lê linhas de um arquivo log que ele recebe como parâmetro. Cada linha representa um acesso para leitura ou escrita de um endereço virtual cuja paginação é, em cada passo do loop, simulada nas estruturas de dados do programa.
+	
+		->	Estruturas de dados usadas para a simulação:
+	
+	Apesar do programa simular a paginação, ele não possui estruturas de dados para simular a memória física ou a partição de swap da memória secundária. O objetivo do trabalho é somente coletar as estatísticas da paginação: número de page-faults e páginas sujas sobrescritas, sem dar importância aos dados da memória em si. Para isso, utilizaram-se 3 estruturas de dados principais e um contador global que simula a passagem de tempo durante a execução do simulador.
+	Observação: como a linguagem C não permite a implementação de booleanos, o simulador representa bits que existiriam no mundo prático com bytes inteiros, do tipo unsigned char, para simplificar.
+
+		- Tabela de páginas
+	A tabela de páginas é uma tabela que descreve a posição física de cada página virtual, seja na memória principal ou secundária. No caso de nosso simulador, a posição física da memória secundária é considerada irrelevante (pois não interfere nos resultados desejados do simulador), então está sempre zerada na tabela. A tabela é implementada por um vetor de estruturas de dois campos: moldura de página associada à página virtual e um booleano que indica se a página está na memória física ou não (em caso negativo, a moldura associada é 0). Os índices do vetor representam a página da memória virtual que representa a entrada da tabela. A tabela é inicializada com a quantidade total de páginas possibilitada pelo endereçamento de 32 bits e tamanho de página utilizado no programa, com todos os campos com 0. A implementação da tabela em sistemas operacionais como Linux possui outros dados como bits R e M, que no nosso caso não existem pois já são representados pela outra estrutura de dados.
+
+		- Descritores de molduras de página
+	Cada quadro físico da memória é representado por uma estrutura que descreve dados sobre a moldura e seu conteúdo. Um vetor global guarda todas as estruturas de cada quadro, inicializado com a quantidade de molduras da memória física, que depende do tamanho da memória física e da página. A estrutura possui os campos:
+	* bitM	-	booleano que informa se o dado da página na moldura sofreu operação de escrita.
+	* bitR	- booleano que informa se o dado da página na moldura foi refenciado. É zerado de tempos em tempos.
+	* boolEhMapeado	-	booleano que informa se a moldura é mapeada por uma página virtual ou não (se a moldura é referenciada por alguma entrada da tabela de páginas)
+	* mappedTableEntry	-	número da página que está associada à moldura (ou número da linha da tabela de páginas)
+	* ultimoAcesso	-	byte usado para política de paginação LRU, que indica as últimas referências feitas à página
+	* tempoMemoria	-	inteiro que informa em que momento a página foi carregada na memória. Usado na política de paginação NOVO
+	* qtdRef	-	número de vezes que a página foi referenciada, desde que foi carregada na memória. Usado na política de paginação NOVO
+
+		- Lista de alocação de memória
+	Para facilitar a alocação de memória, criou-se uma lista encadeada através do uso do módulo servidor "lista" para representar grupos contíguos de molduras de página livres para alocação ou já ocupadas (já referenciadas na tabela de páginas). Cada nó da lista é uma estrutura que guarda a primeira moldura do grupo, a última moldura do grupo e um booleano que indica se as molduras de páginas do grupo estão livres ou ocupadas. Do jeito que essa lista é concebida, buscar espaço livre para alocar memória para uma nova página após um page-fault envolve olhar no máximo os dois primeiros nós da lista, pois se o primeiro representa um grupo ocupado então o segundo representa um grupo de molduras livres.
+
+		->	Descrição do algoritmo NOVO:
+
+	Visando obter um número de page-faults e escritas em disco menores que os outros algoritmos, inspiramo-nos para implementar o algoritmo NOVO de maneira que páginas mais usadas permaneçam na memória, para não terem de ser recarregadas. Enquanto os outros algoritmos (LRU, NRU) baseiam-se na ideia de que a página há mais tempo não usada pode ser retirada, gostaríamos de implementar um algoritmo que não hesitasse em retirar uma página recentemente usada, caso não se espere que ela seja muito utilizada (por exemplo, uma função de um programa pode ser chamada com pouca frequência, e logo após ser usada, seu código não precisa manter-se em memória física pois não será usada por um bom tempo). Por isso, decidimos implementar um algoritmo que considera a frequência com que cada página é usada, dando preferência à retirada da página que é usada com menos frequência (que pode ser uma página que acabou de ser carregada, se foi usada apenas uma vez depois ficou em desuso). Consideramos que a frequência com que uma página é usada é o número de vezes que ela foi referenciada desde que foi carregada na memória dividido pelo tempo passado desde que foi carregada na memória. Por isso, adicionaram-se 2 campos à estrutura do descritor de page frames dedicados ao uso do algoritmo: contador de referências (qtdRef) e instante de carregamento em memória (tempoMemoria). O trabalho do algoritmo, decidir o page frame a ser retirado, é encontrar a página de menor frequência de acesso, que minimiza qtdRef/tempoMemoria. O algoritmo não leva em conta se as páginas sofreram escrita. Com esse algoritmo, obtivemos resultados estritamente melhores que o LRU e o NRU em certas configurações de simulação.
+		
+		->	Análise de desempenhos dos algoritmos:
+			
+	Testamos os 3 algoritmos de substituição de página (NRU, LRU, NOVO) para cada arquivo .log (compilador, compressor, matriz, simulador) em duas configurações: Tamanho de página 8KB e 32KB. Em ambos os casos, o tamanho da memória física foi fixo em 1MB. Como os algoritmos NRU e LRU são dependentes de um período de atualização, que implementamos no programa pela macro PERIODO_ATUALIZACAO, escolhemos um período de atualização que garantisse uma boa performance dos algoritmos (através de testes) de maneira que alterar tal número não implique em ganhos significativos. Seria esperado que tal período também devesse se adequar ao tamanho da página utilizada. Em nossos testes, porém, ao aumentar o tamanho da página, por exemplo, o algoritmo LRU melhorava se o período de atualização fosse diminuído, porém o algoritmo NRU tinha sua performance prejudicada. Escolhemos então manter o PERIODO_ATUALIZACAO como 70 em ambos os casos de teste (8KB e 32KB), para manter um equilíbrio de performance dos algoritmos.
+	Inserimos abaixo os resultados dos testes obtidos no terminal entre comentários e comparações sobre suas performances (comentários sinalizados por //):
+	
+		/* TESTES NO ARQUIVO COMPILADOR.LOG */
+		
+	/* Para tamanho de página = 8KB */
+			
+[rafael@localhost T2]$ ./sim-virtual NRU compilador.log 8 1
+Executando o simulador...
+Arquivo de entrada: compilador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 86030
+Numero de Paginas escritas: 85850
+
+[rafael@localhost T2]$ ./sim-virtual LRU compilador.log 8 1
+Executando o simulador...
+Arquivo de entrada: compilador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 61654
+Numero de Paginas escritas: 61478
+
+// Usamos a política NRU e LRU e como observado, o LRU obteve um resultado bem melhor.
+// Acreditamos que isso já era esperado, pois o NRU só guarda a informação se uma página
+// referenciada ou modificada em certo período de tempo, enquanto o LRU faz o mesmo em
+// relação à referência, enquanto ainda salva informação adicional de quanto há quanto
+// ela foi referenciada, melhorando o caso de desempates. A única vantagem da NRU seria
+// uma possível quantidade de páginas sujas retirada da memória menor, que demoram mais
+// em um page out. Ainda assim, LRU parece mais confiável salve algumas excessões. 
+
+[rafael@localhost T2]$ ./sim-virtual NOVO compilador.log 8 1
+Executando o simulador...
+Arquivo de entrada: compilador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 38777
+Numero de Paginas escritas: 38598
+
+// De acordo com o teste acima, nosso algoritmo conseguiu obter menor número de páginas
+// escritas e page-faults. Fizemos o algoritmo inspirados no algoritmo LFU que considera
+// quantidade de acessos às páginas (em empates,faz como o fifo e retira a primeira
+// página carregada na memória, o que frequentemente não tem muito sentido). Por outro
+// lado, achamos que ele era um algoritmo muito injusto porque páginas muito acessadas
+// em determinado momento não necessariamente seriam muito acessadas no futuro. Também
+// gostaríamos de levar em conta que uma página carregada recentemente, por menor que
+// fosse a sua quantidade de referências, pode ser carregada novamente num futuro
+// breve. Para resolver isso, o conceito de frequência de acesso baseado no tempo
+// que a página ficou na memória solucionou bem nossos desejos. Páginas carregadas
+// recentemente ainda têm uma frequência priorizada por ainda estarem a pouco tempo na
+// memória. Por outro lado, se ela começa a ficar muito tempo na memória, deve ser
+// acessada várias vezes para que se compense mantê-la. Essa política, como observado,
+// obteve resultados melhores ainda do que somente retirar a página não referenciada a
+// mais tempo (se ela foi muito referenciada antes, pode voltar a ser novamente). Os
+// resultados, inclusive, foram de menos da metade do que os resultados obtidos na NRU!
+
+	/* Para tamanho de página = 32KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU compilador.log 32 1
+Executando o simulador...
+Arquivo de entrada: compilador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 81623
+Numero de Paginas escritas: 81556
+
+[rafael@localhost T2]$ ./sim-virtual LRU compilador.log 32 1
+Executando o simulador...
+Arquivo de entrada: compilador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 81593
+Numero de Paginas escritas: 81531
+
+[rafael@localhost T2]$ ./sim-virtual NOVO compilador.log 32 1
+Executando o simulador...
+Arquivo de entrada: compilador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 77306
+Numero de Paginas escritas: 77244
+
+// Quando aumentamos o tamanho da página, os algoritmos LRU e NOVO aumentaram
+// consideravelmente a quantidade de page-faults e páginas sujas, enquanto o NRU
+// diminuiu levemente. Acreditamos que o que aconteceu foi que os 3 algoritmos
+// acabaram trabalhando de maneira similar sobre as novas páginas, causando resultados
+// próximos de desempenho entre eles, apesar de ainda manterem sua hierarquia de
+// desempenho (NOVO > LRU > NRU). À medida que se aumenta o tamanho da página, começam
+// a haver menos páginas. Como os algoritmos trabalham sobre as informações das páginas
+// para escolher a mais improvável de ser referenciada novamente, menos páginas
+// significa também menos informações e informações menos localizadas e mais dispersas,
+// pois as páginas englobam mais endereços de memória. Se um endereço é constantemente
+// referenciado, é mais difícil considerar que toda a página em que está contido é mais
+// importante de se manter na memória. Acreditamos assim que, quando há tamanho menor
+// de página e menos páginas, os algoritmos perdem muito da sua eficácia e passam a
+// trabalhar todos de maneira similar sobre as páginas restantes.
+
+		/* TESTES NO ARQUIVO COMPRESSOR.LOG */
+		
+	/* Para tamanho de página = 8KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU compressor.log 8 1
+Executando o simulador...
+Arquivo de entrada: compressor.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 1589
+Numero de Paginas escritas: 41
+
+// Os números de page-fault e página suja do arquivo compressor são bem menores para
+// todos os algoritmos, pois o programa faz menos acessos à memória. O número de páginas
+// escritas retiradas pelo NRU foi bem pequeno pois, observando e testando os endereços
+// que o compressor acessa, há frequentemente páginas não modificadas de bit R zerado
+// pois há muitos acessos a páginas iguais pelo programa. As escritas, então, ocorrem
+// quase no mesmo endereço, o que justifica tais números.
+
+[rafael@localhost T2]$ ./sim-virtual LRU compressor.log 8 1
+Executando o simulador...
+Arquivo de entrada: compressor.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 1180
+Numero de Paginas escritas: 958
+
+[rafael@localhost T2]$ ./sim-virtual NOVO compressor.log 8 1
+Executando o simulador...
+Arquivo de entrada: compressor.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 634
+Numero de Paginas escritas: 343
+
+// O NOVO permanece com resultados melhores. Ambos NOVO e LRU só perdem em número de
+// páginas sujas para o NRU pois não consideram o bit M em suas políticas.
+
+	/* Para tamanho de página = 32KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU compressor.log 32 1
+Executando o simulador...
+Arquivo de entrada: compressor.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 2372
+Numero de Paginas escritas: 2118
+
+// Aumentando o tamanho da página, tudo permanece como esperado (NOVO > LRU > NRU). Por
+// outro lado, o NRU perdeu novamente a vantagem sobre as páginas sujas que havia
+// obtido no arquivo compressor. Acreditamos que isso ocorreu porque ao ter menos
+// páginas em memória, acabam não sobrando mais páginas com o bit de referência 0, não
+// modificadas, para serem retiradas. Isso priorizará a retiragem de páginas de bit 0
+// que já foram modificadas.
+
+[rafael@localhost T2]$ ./sim-virtual LRU compressor.log 32 1
+Executando o simulador...
+Arquivo de entrada: compressor.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 1690
+Numero de Paginas escritas: 1469
+
+[rafael@localhost T2]$ ./sim-virtual NOVO compressor.log 32 1
+Executando o simulador...
+Arquivo de entrada: compressor.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 1404
+Numero de Paginas escritas: 1241
+
+		/* TESTES NO ARQUIVO MATRIZ.LOG */
+		
+	/* Para tamanho de página = 8KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU matriz.log 8 1
+Executando o simulador...
+Arquivo de entrada: matriz.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 10846
+Numero de Paginas escritas: 8556
+
+[rafael@localhost T2]$ ./sim-virtual LRU matriz.log 8 1
+Executando o simulador...
+Arquivo de entrada: matriz.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 3671
+Numero de Paginas escritas: 3407
+
+[rafael@localhost T2]$ ./sim-virtual NOVO matriz.log 8 1
+Executando o simulador...
+Arquivo de entrada: matriz.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 2439
+Numero de Paginas escritas: 2036
+
+// Como antes, NOVO > LRU > NRU
+
+	/* Para tamanho de página = 32KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU matriz.log 32 1
+Executando o simulador...
+Arquivo de entrada: matriz.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 12196
+Numero de Paginas escritas: 11624
+
+[rafael@localhost T2]$ ./sim-virtual LRU matriz.log 32 1
+Executando o simulador...
+Arquivo de entrada: matriz.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 7942
+Numero de Paginas escritas: 7560
+
+[rafael@localhost T2]$ ./sim-virtual NOVO matriz.log 32 1
+Executando o simulador...
+Arquivo de entrada: matriz.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 8471
+Numero de Paginas escritas: 8216
+
+// Como esperado, os números aumentaram bastante com o aumento do tamanho de página. O
+// NRU está pior que os outros, mas eles ainda assim estão próximos. Neste exemplo, o
+// algoritmo NOVO, que é uma aposta de um algoritmo melhor, não é mais eficiente que o
+// LRU pela política que aplicam.
+
+		/* TESTES NO ARQUIVO SIMULADOR.LOG */
+		
+	/* Para tamanho de página = 8KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU simulador.log 8 1
+Executando o simulador...
+Arquivo de entrada: simulador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 75282
+Numero de Paginas escritas: 75081
+
+[rafael@localhost T2]$ ./sim-virtual LRU simulador.log 8 1
+Executando o simulador...
+Arquivo de entrada: simulador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 36184
+Numero de Paginas escritas: 35988
+
+[rafael@localhost T2]$ ./sim-virtual NOVO simulador.log 8 1
+Executando o simulador...
+Arquivo de entrada: simulador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 8 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 19456
+Numero de Paginas escritas: 19260
+
+// Como antes, NOVO > LRU > NRU
+
+	/* Para tamanho de página = 32KB */
+
+[rafael@localhost T2]$ ./sim-virtual NRU simulador.log 32 1
+Executando o simulador...
+Arquivo de entrada: simulador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NRU
+Numero de Faltas de Páginas: 69079
+Numero de Paginas escritas: 69019
+
+[rafael@localhost T2]$ ./sim-virtual LRU simulador.log 32 1
+Executando o simulador...
+Arquivo de entrada: simulador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: LRU
+Numero de Faltas de Páginas: 57708
+Numero de Paginas escritas: 57647
+
+[rafael@localhost T2]$ ./sim-virtual NOVO simulador.log 32 1
+Executando o simulador...
+Arquivo de entrada: simulador.log
+Tamanho da memoria fisica: 1 MB
+Tamanho das páginas: 32 KB
+Alg de substituição: NOVO
+Numero de Faltas de Páginas: 56398
+Numero de Paginas escritas: 56338
+
+// Como antes, NOVO > LRU > NRU, porém para tamanho 32KB os algoritmos trabalham com
+// menos eficiência e mais similarmente

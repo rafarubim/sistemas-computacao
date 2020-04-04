@@ -1,0 +1,7 @@
+Exec round-robinIO
+Exec real-timeIO I=5 D=3
+Exec real-timeCPU I=27 D=6
+Exec real-timeIO I=55 D=1
+Exec prioridade4CPU PR=3
+Exec prioridade5IO PR=5
+Exec round-robinCPU

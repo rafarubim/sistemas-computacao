@@ -1,0 +1,1155 @@
+PUC-Rio	-	Trabalho de Sistemas de computação (INF1019)
+Data de entrega: 04/05/2017
+Professor: Markus Endler
+Monitora: Jéssica Almeida
+Alunos:
+Rafael Rubim Cabral					-	1511068
+Gabriel de Andrade Busquim	-	1510549
+
+		->	Modo de usar:
+	Para testar o trabalho, entrar em Programas executaveis e digitar no Terminal:
+./interpretador
+	O executável (binário) do interpretador criará os processos interpretador e
+escalonador. Os executáveis do interpretador, escalonador e o arquivo
+"exec.txt" devem estar todos na mesma pasta. O interpretador lerá os comandos
+"Exec ..." contidos no arquivo "exec.txt" e passará os processos passados em
+cada Exec para o escalonador, que os executará e escalonará, se os programas
+passados estiverem na mesma pasta que os executáveis do escalonador/interpretador.
+
+		->	Comentários de desenvolvimento (não obrigatoriamente faz parte do relatório, mas explica algumas
+				decisões de desenvolvimento do grupo):
+
+	Para simular um escalonador Unix, o nosso escalonador, quando não está
+trabalhando, fica desativado dormindo através da função sleep. Quando o
+escalonador fica eternamente em sleep (chamado em um loop), chamamos isso de
+deixar o escalonador em coma. Quando o escalonador não gerencia a execução de
+nenhum processo ou de um único processo do tipo Round-Robin/Prioridade ele fica em
+coma, pois não precisa voltar a "acordar". O coma do escalonador pode ser
+encerrado pela execução de novos processos passados pelo interpretador. Quando não
+está em coma, o escalonador também fica dormindo quando não necessário, mas ele
+tem tempo marcado dentro de um intervalo para acordar e mudar o contexto de um
+processo em execução para outro. Se o sleep for interrompido nesse intervalo por
+um sinal, o escalonador pode ou não decidir fazer uma troca de contexto imediata,
+caso necessária preempção (caso não necessária, ele termina de dormir o tempo
+restante).
+	Criamos no código fonte uma constante _DEBUG, que se compilado com _DEBUG igual a
+1, o escalonador imprimirá diversas mensagens informativas durante seu funcionamento.
+	Criamos um arquivo "definicoes.h" que define uma struct que representa um processo
+lido pelo interpretador e os tipos de política de execução de cada processo. Esses
+tipos são usados pelo interpretador e escalonador.
+	O programa executável do escalonador, como é chamado (execv) como processo filho
+do interpretador, compartilha uma pipe com ele através do qual o interpretador passa
+processos que ele leu. O executável do escalonador, quando chamado, recebe como
+parâmetro o id do descritor da saída de leitura dessa pipe (pois esse descritor
+perdura após o execv).
+	Quando o escalonador recebe processos do interpretador, ele salva-os em dois tipos
+de estruturas de dados que utilizamos: a primeira é uma lista de processos
+Round-Robin (que inclui processos prioridade, pois rodam em Round-Robin entre si),
+objetivamente uma lista circular duplamente encadeada (essa lista foi adaptada de um
+módulo já pronto que pegamos, apenas alteramos as funções e criamos algumas novas).
+A segunda é uma lista de prioridades (ou heap) que implementamos para guardar os
+processos Real-Time (a lista prioriza processos que tem tempo de início de execução
+menor).
+	O escalonador sabe tratar 2 sinais: SIGUSR1, enviado pelo interpretador para
+avisar que há um novo pedido de execução de processo na pipe compartilhada por eles.
+SIGCHLD, que considera a possibilidade de encerramento de um dos programas
+escalonados (inclusive o que está atualmente em execução). Se houver algum processo
+que foi encerrado, retira-o das estruturas de dados do escalonador (também o faz
+mudar o contexto, no caso do processo atualmente em execução ser encerrado).
+	Em determinado momento do programa, os sinais são mascarados (bloqueados)
+temporariamente para que seu tratamento não interfira em certas operações que
+deveriam ser atômicas (como uma região crítica do próprio programa).
+	Como pedido, os processos Real-Time executam em seu tempo marcado com prioridade
+superior. Para os processos Prioridade e Round-Robin, fizemos da seguinte maneira:
+ambos executam na ordem de uma lista circular única, com processos de prioridades
+diferentes e round-robin misturados. O tempo de execução deles é proporcional à
+superioridade de sua prioridade. Quando um novo processo é passado ao escalonador, a
+preempção ocorre no caso de uma prioridade superior ser inserida (em relação ao
+processo que executa atualmente). Nesse caso, o novo processo é inserido na lista
+logo após o processo que já estava em execução. No caso de um processo com
+prioridade menor ou igual ao atualmente em execução ser inserido (round-robin é a
+menor prioridade), a interrupção não ocorrerá e o novo processo será inserido na
+lista logo antes do primeiro processo de prioridade inferior à dele, que já está na
+lista (ou no final da lista, caso isso não ocorra).
+	Implementamos os processos Round-Robin/Prioridade de maneira que, quando são interrompidos para rodar um
+processo de prioridade superior, ao término deste, o fluxo de execução não volta para o ponto do programa
+interrompido, mas para o próximo da lista round-robin/prioridade. Fizemos isso porque o problema ficaria
+muitíssimo complexo, pois se houvesse um processo P1 que foi interrompido por P2 que por sua vez é
+interrompido por P3 e assim por diante, quando P3 encerrasse seu tempo, voltaria para o ponto em que P2
+foi interrompido que em seu término voltaria para o ponto em que P1 foi interrompido, podendo haver assim
+muitas possibilidades de interrupção encadeadas.
+
+		->	Testes e resultados + análise crítica:
+
+	No meio dos Resultados dos testes impressos no Terminal, adicionaremos
+comentários analisando-os
+criticamente. Os comentários estão entre /* */ para serem identificados.
+	Criamos diversos programas auxiliares que serão executados e geridos pelo
+escalonador com os nomes das políticas com que serão executados, para fácil teste.
+Cada programa possui 2 tipos de implementação: IO bound, que rapidamente de tempos
+em tempos imprime seu pid no terminal. CPU bound, que preenche um vetor e o percorre
+infinitamente, apenas tarefas que demandam CPU, com exceção de um print que ele faz
+sempre que é resumido por um SIGCONT, mostrando em tela o valor de seu contador que
+com muitos ciclos de processamento vai lentamente aumentando.
+	Nos resultados impressos no terminal que copiamos para cá, cada programa, antes
+de imprimir uma mensagem, identifica-se com algumas letras maiúsculas para sabermos
+quem está imprimindo em tela. As mensagens do escalonador começam com ESC:, enquanto
+as mensagens de um programa Round-Robin CPU bound começam com RRCPU e assim por
+diante (RTCPU, RTIO, P1IO, P5IO, P5CPU etc).
+
+//--------------------------------------------------------------------------------------------------------
+1) Teste de validez do Real-Time
+
+	-> Teste
+[exec.txt]
+Exec real-timeCPU I=-10 D=5		/* P1 */
+Exec real-timeCPU I=61 D=3		/* P2 */
+Exec real-timeCPU I=10 D=-2		/* P3 */
+Exec real-timeCPU I=15 D=46		/* P4 */
+Exec real-timeCPU I=0 D=5			/* P5 */
+Exec real-timeIO I=10 D=5			/* P6 */
+Exec real-timeCPU I=4 D=5			/* P7 */
+Exec real-timeCPU I=6 D=5			/* P8 */
+Exec real-timeCPU I=5 D=5			/* P9 */
+
+[comentários]
+O que esperamos que rode:
+P5, P6 e P9. Os outros não, como explicado na análise crítica
+
+	-> Resultado
+$ ./interpretador
+ESC: Escalonador iniciado. Estado incial: coma
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	-10
+ESC: Tempo de duracao do processo:	5
+
+ESC: Programa de arquivo "real-timeCPU" nao pode ser executado porque seu tempo de inicio eh invalido.
+
+/* Como esperado I=-10 causou um erro de invalidez */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	61
+ESC: Tempo de duracao do processo:	3
+
+ESC: Programa de arquivo "real-timeCPU" nao pode ser executado porque seu tempo de inicio eh invalido.
+
+/* Como esperado I=61 causou um erro de invalidez */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	10
+ESC: Tempo de duracao do processo:	-2
+
+ESC: Programa de arquivo "real-timeCPU" nao pode ser executado porque sua duracao eh invalida.
+
+/* Como esperado D=-2 causou um erro de invalidez */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	15
+ESC: Tempo de duracao do processo:	46
+
+ESC: Programa de arquivo "real-timeCPU" nao pode ser executado porque seu inicio + duracao ultrapassam 60 segundos.
+
+/* Como esperado I+D > 60  causou um erro de invalidez */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	0
+ESC: Tempo de duracao do processo:	5
+
+ESC: Escalonador saindo de coma
+
+ESC: Segundo do minuto atual: 27.1691
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 32.8309 segundos
+
+/* Como esperado I=0 D=5 foi um processo inserido no escalonador com sucesso */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeIO
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	10
+ESC: Tempo de duracao do processo:	5
+
+ESC: Segundo do minuto atual: 28.1718
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 31.8282 segundos
+
+/* Como esperado I=10 D=5 foi um processo inserido no escalonador com sucesso */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	4
+ESC: Tempo de duracao do processo:	5
+
+ESC: Programa de arquivo "real-timeCPU" nao pode ser executado porque ha um conflito com o processo de arquivo "real-timeCPU".
+
+/* Como esperado I=4 D=5 foi um processo cujo tempo é conflitante com o processo
+I=0 D=5 e não foi inserido no escalonador */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	6
+ESC: Tempo de duracao do processo:	5
+
+ESC: Programa de arquivo "real-timeCPU" nao pode ser executado porque ha um conflito com o processo de arquivo "real-timeIO".
+
+/* Como esperado I=6 D=5 foi um processo cujo tempo é conflitante com o processo
+I=10 D=5 e não foi inserido no escalonador */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	5
+ESC: Tempo de duracao do processo:	5
+
+ESC: Segundo do minuto atual: 31.1731
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 33.8269 segundos
+
+/* Como esperado I=5 D=5 foi um processo inserido no escalonador com sucesso */
+
+//--------------------------------------------------------------------------------------------------------
+2) Teste do Round-Robin
+
+	-> Teste
+
+[exec.txt]
+Exec round-robinIO		/* P1 */
+Exec round-robinCPU		/* P2 */
+Exec inexistente			/* P3 */
+Exec round-robinCPU		/* P4 */
+
+[comentários]
+	O que esperamos que não rode: P3
+	Os outros serão inseridos nos seguintes segundos a partir do início do interpretador/escalonador:
+Segundo	-	Programa
+0				-	P1
+1				-	P2
+3				-	P4
+	Ordem final de execução esperada (segundo os comentários de desenvolvimento do jeito que implementamos):
+P1 -> P4 -> P2
+
+	-> Resultado
+
+$ ./interpretador
+ESC: Escalonador iniciado. Estado incial: coma
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	round-robinIO
+ESC: Politica do processo:		Round-Robin
+
+ESC: Escalonador saindo de coma
+
+ESC: Pedido de execucao de novo processo de pid: 2221
+
+ESC: Escalonador entrando em coma
+
+/* Como esperado o escalonador roda em coma com um único processo eternamente 
+em execução */
+
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	round-robinCPU
+ESC: Politica do processo:		Round-Robin
+
+ESC: Escalonador saindo de coma
+
+/* Como esperado o escalonador sai do coma com outro processo presente e insere o
+outro processo logo após o atual pois ele não tem prioridade sobre ele. A fatia de
+0.5 segundos então começa a contar e o pid 2221 continua em execução */
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+
+/* Como esperado o escalonador após 0.5 segundos vê que o novo processo ainda não
+iniciou execução e o cria. */
+
+ESC: Pedido de execucao de novo processo de pid: 2222
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Iniciando ROUND-ROBIN de pid 2222. Contador: 0
+
+/* Como esperado o escalonador mantém-se 0.5 segundos executando o novo processo */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	inexistente
+ESC: Politica do processo:		Round-Robin
+
+/* Apesar do exec ser inválido porque o programa "inexistente" não existe, na nossa
+implementação não é o interpretador que detecta esse problema, mas o escalonador que
+o descobre na hora que tentar executá-lo como programa funcional. Como o teórico
+novo programa ainda não está na sua hora de executar, pois ele não tem prioridade
+sobre o processo de pid 2222 que também é round-robin, o novo programa é apenas
+inserido na lista como novo processo que deve ser executado. */
+
+ESC: Realizada troca de contexto para pid: 2221
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+
+/* O contexto volta para 2221, que era o próximo da fila */
+
+ESC: Pedido de execucao de novo processo de pid: 2223
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+ESC: O programa de nome "inexistente" nao pode ser executado. (Experimente verificar se ele esta na mesma pasta do programa escalonador)
+
+/* Como esperado, na hora de tentar executar o programa de nome inexistente
+o escalonador descobre que ele não existe e o retira de sua lista de processos */
+
+ESC: Realizada troca de contexto para pid: 2222
+
+/* Contexto volta então para proximo da fila */
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Resumindo ROUND-ROBIN de pid 2222. Contador: 5
+
+/* Programa CPU bound executa com sucesso por 0.5 */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	round-robinCPU
+ESC: Politica do processo:		Round-Robin
+
+/* Novo round-robin acrescentado no final da fila, será executado por último */
+
+ESC: Realizada troca de contexto para pid: 2221
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+
+ESC: Pedido de execucao de novo processo de pid: 2224
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Iniciando ROUND-ROBIN de pid 2224. Contador: 0
+
+/* Como esperado é executado com sucesso após o processo de pid 2221.
+A nova fila (que rodará em loop infinito) de processos é: 2224 -> 2222 -> 2221 (Como nos resultados
+esperados, P1 (2221) -> P4 (2224) -> P2 (2222)) */
+
+ESC: Realizada troca de contexto para pid: 2222
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Resumindo ROUND-ROBIN de pid 2222. Contador: 10
+ESC: Realizada troca de contexto para pid: 2221
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+RRIO: ROUND-ROBIN de pid 2221
+ESC: Realizada troca de contexto para pid: 2224
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Resumindo ROUND-ROBIN de pid 2224. Contador: 5
+ESC: Realizada troca de contexto para pid: 2222
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Resumindo ROUND-ROBIN de pid 2222. Contador: 15
+
+/* Como esperado, os programas em round-robin executam na ordem adequada */
+
+//--------------------------------------------------------------------------------------------------------
+3) Teste de Prioridade
+
+	-> Testes
+
+[exec.txt]
+Exec round-robinCPU					/* P1 */
+Exec prioridade7IO PR=7			/* P2 */
+Exec prioridade1CPU PR=1		/* P3 */
+Exec prioridade3IO PR=3			/* P4 */
+
+[comentários]
+	Esperamos que tudo rode.
+	Os programas serão inseridos nos seguintes segundos:
+Segundo	-	Programa
+0				-	P1
+1				-	P2
+2				- P3
+3				-	P4
+	Ordem final de execução esperada:
+P1 -> P2 -> P3 -> P4
+	
+	-> Resultados
+
+$ ./interpretador
+ESC: Escalonador iniciado. Estado incial: coma
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	round-robinCPU
+ESC: Politica do processo:		Round-Robin
+
+ESC: Escalonador saindo de coma
+
+ESC: Pedido de execucao de novo processo de pid: 2436
+
+ESC: Escalonador entrando em coma
+
+RRCPU: Iniciando ROUND-ROBIN de pid 2436. Contador: 0
+
+/* Primeiro processo roda como esperado */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	prioridade7IO
+ESC: Politica do processo:		Prioridade
+ESC: Prioridade do processo:		7
+
+ESC: Escalonador saindo de coma
+
+ESC: Pedido de execucao de novo processo de pid: 2437
+
+ESC: Escalonador dormira por: 1.0000 segundos
+
+/* Como esperado, o processo de prioridade 7 possui prioridade superior ao
+round-robin então interrompe sua execução instantaneamente e roda por 1 segundo
+no total */
+
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	prioridade1CPU
+ESC: Politica do processo:		Prioridade
+ESC: Prioridade do processo:		1
+
+ESC: Pedido de execucao de novo processo de pid: 2438
+
+ESC: Escalonador dormira por: 4.0000 segundos
+
+P1CPU: Iniciando PRIORIDADE 1 de pid 2438. Contador: 0
+
+/* Como esperado, o processo CPU bound de prioridade 1 interrompe e troca contexto
+imediatamente para ele mesmo. Ele roda por 4 segundos. */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	prioridade3IO
+ESC: Politica do processo:		Prioridade
+ESC: Prioridade do processo:		3
+
+/* Aqui, após a inserção do novo processo de prioridade inferior ao que estava
+atualmente em execução (prioridade1), o novo processo de prioridade 3 só começa a
+rodar após os 3 segundos restantes do processo de pid 2438 serem finalizados. Não
+ocorre interrupção. Isso não pode ser observado pela cópia dos resultados do
+terminal. Ficaria claro que funciona caso mudássemos o processo 1, que é CPU bound
+(P1CPU) para um IO bound. Fizemos esse teste e o processo 1 continua imprimindo sua
+mensagem mesmo após a inserção do P3IO, até terminar os 3 segundos restantes (4 do
+processo de prioridade 1 menos o 1 segundo que já havia passado). Não colocamos
+esse teste aqui pois é muito visualmente poluído já que o processo imprime várias
+mensagens consecutivamente por 4 segundos, mas isso pode ser facilmente testado.
+Isso é exatamente o esperado, pois 
+como o novo processo não possui prioridade superior, não ocorre preempção. */
+
+ESC: Pedido de execucao de novo processo de pid: 2439
+
+ESC: Escalonador dormira por: 3.0000 segundos
+
+/* O novo processo P3IO executa logo em seguida. Ele não interrompeu P1CPU, mas
+também não foi colocado no final da fila pois os outros processos da fila possuem
+prioridade inferior à dele. Isso é tal como implementado (vide comentários de
+desenvolvimento). */
+
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+
+/* Daqui para baixo, as trocas de contexto e tempos de execução ocorrem exatamente
+tal como esperado, executando na ordem RRCPU -> P7IO -> P1CPU -> P3IO (ou em pids:
+2436 -> 2437 -> 2438 -> 2439, tal como P1 -> P2 -> P3 -> P4) */
+
+ESC: Realizada troca de contexto para pid: 2436
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Resumindo ROUND-ROBIN de pid 2436. Contador: 10
+ESC: Realizada troca de contexto para pid: 2437
+
+ESC: Escalonador dormira por: 1.0000 segundos
+
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+P7IO: PRIORIDADE 7 de pid 2437
+ESC: Realizada troca de contexto para pid: 2438
+
+ESC: Escalonador dormira por: 4.0000 segundos
+
+P1CPU: Resumindo PRIORIDADE 1 de pid 2438. Contador: 40
+ESC: Realizada troca de contexto para pid: 2439
+
+ESC: Escalonador dormira por: 3.0000 segundos
+
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+P3IO: PRIORIDADE 3 de pid 2439
+ESC: Realizada troca de contexto para pid: 2436
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Resumindo ROUND-ROBIN de pid 2436. Contador: 15
+
+//--------------------------------------------------------------------------------------------------------
+4) Testes Real-Time
+
+	-> Testes
+	
+[exec.txt]
+Exec real-timeCPU I=23 D=12		/* P1 */
+Exec real-timeIO I=35 D=2			/* P2 */
+Exec real-timeIO I=37 D=5			/* P3 */
+Exec real-timeCPU I=4 D=6			/* P4 */
+
+[comentários]
+	Esperamos que tudo rode
+	Os programas serão inseridos nos seguintes segundos:
+Segundo	-	Programa
+0				-	P1
+1				-	P2
+2				-	P3
+3				-	P4
+	Ordem final de execução esperada é a dos segundos dos real-time.
+
+	-> Resultado
+
+$ ./interpretador
+ESC: Escalonador iniciado. Estado incial: coma
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	23
+ESC: Tempo de duracao do processo:	12
+
+ESC: Escalonador saindo de coma
+
+ESC: Segundo do minuto atual: 42.5899
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 40.4098 segundos
+
+/* O primeiro processo real-time que chega executa de 23 a 35 segundos. Como nesse
+momento o escalonador está no segundo 42.6 do minuto atual (por causa da hora que
+ele começou a rodar, isso não é fixo), ele não roda o processo ainda e sai do coma,
+dormindo por 40.4 segundos até que chegue a hora de acordar para executar o processo
+real-time */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeIO
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	35
+ESC: Tempo de duracao do processo:	2
+
+ESC: Segundo do minuto atual: 43.5903
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 39.4097 segundos
+
+/* Da mesma maneira, o novo processo roda de 35 a 37 e o tempo de sono do
+escalonador é igual ao tempo que falta para o primeiro processo real-time (que
+acontece no segundo 23) acontecer. (segundo atual: 43.6. Para o fim do minuto: 
+16.4. Para chegar nos 23 segundos: 16.4 + 23 = 39.4 segundos para o próximo
+real-time) */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeIO
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	37
+ESC: Tempo de duracao do processo:	5
+
+ESC: Segundo do minuto atual: 44.5919
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 38.4081 segundos
+
+/* Da mesma maneira, real-time ainda não roda e o escalonador permanece dormindo */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	4
+ESC: Tempo de duracao do processo:	6
+
+ESC: Segundo do minuto atual: 45.5927
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 18.4073 segundos
+
+/* Como o novo real-time ocorre no segundo 4 (antes do que ocorre no 23), então
+agora o escalonador só dormirá 18.4 segundos após o segundo 45 para ter que mudar
+de contexto */
+
+ESC: Segundo do minuto atual: 4.0007
+
+ESC: Pedido de execucao de novo processo de pid: 2885
+
+ESC: Escalonador dormira por: 5.9993 segundos
+
+RTCPU: Iniciando REAL-TIME de pid 2885. Contador: 0
+
+ESC: Segundo do minuto atual: 10.0033
+
+ESC: Processo atual foi pausado
+
+/* Como esperado, quando chegou no segundo 4, o escalonador rodou o real-time CPU
+de pid 2885 por 6 segundos e voltou a pausar o processo */
+
+ESC: Escalonador dormira por: 12.9967 segundos
+
+/* Agora, no segundo atual (10), faltam 13 segundos para o RTCPU que começa no 23 */
+
+ESC: Segundo do minuto atual: 23.0007
+
+ESC: Pedido de execucao de novo processo de pid: 2886
+
+ESC: Escalonador dormira por: 11.9993 segundos
+
+RTCPU: Iniciando REAL-TIME de pid 2886. Contador: 0
+
+/* Como esperado, ele começa no tempo adequado e dura o tempo adequado. Daqui para
+baixo, pode-se claramente ver que os processos real-time ocorrem no tempo
+especificado e duram o tempo especificado */
+
+ESC: Segundo do minuto atual: 35.0009
+
+ESC: Pedido de execucao de novo processo de pid: 2887
+
+ESC: Escalonador dormira por: 1.9991 segundos
+
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+RTIO: REAL-TIME de pid 2887
+ESC: Segundo do minuto atual: 37.0035
+
+ESC: Pedido de execucao de novo processo de pid: 2888
+
+ESC: Escalonador dormira por: 4.9965 segundos
+
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+RTIO: REAL-TIME de pid 2888
+ESC: Segundo do minuto atual: 42.0011
+
+ESC: Processo atual foi pausado
+
+ESC: Escalonador dormira por: 21.9989 segundos
+
+ESC: Segundo do minuto atual: 4.0020
+
+ESC: Realizada troca de contexto para pid: 2885
+
+ESC: Escalonador dormira por: 5.9980 segundos
+
+RTCPU: Resumindo REAL-TIME de pid 2885. Contador: 60
+
+//--------------------------------------------------------------------------------------------------------
+5) Testes misturados
+
+	-> Testes
+
+[exec.txt]
+Exec round-robinIO						/* P1 */
+Exec real-timeIO I=5 D=3			/* P2 */
+Exec real-timeCPU I=27 D=6		/* P3 */
+Exec real-timeIO I=55 D=1			/* P4 */
+Exec prioridade4CPU PR=3			/* P5 */
+Exec prioridade5IO PR=5				/* P6 */
+Exec round-robinCPU						/* P7 */
+
+[comentários]
+	Esperamos que tudo rode
+	Os programas serão inseridos nos seguintes segundos:
+Segundo	-	Programa
+0				-	P1
+1				-	P2
+2				-	P3
+3				-	P4
+4				- P5
+5				-	P6
+6				- P7
+	Ordem final de execução esperada dos round-robin/prioridade não é determinável pois não se sabe em
+que segundo do minuto atual o interpretador/escalonador começarão, portanto não se sabe quando haverá
+interrupção dos processos real-times. Conforme os processos se desenvolvem nos resultados abaixo,
+porém, desenvolvemos o que se espera da ordem de execução nos comentários da análise crítica.
+
+	-> Resultados
+
+$ ./interpretador
+ESC: Escalonador iniciado. Estado incial: coma
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	round-robinIO
+ESC: Politica do processo:		Round-Robin
+
+ESC: Escalonador saindo de coma
+
+ESC: Pedido de execucao de novo processo de pid: 3806
+
+ESC: Escalonador entrando em coma
+
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+
+/* Executa como esperado */
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeIO
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	5
+ESC: Tempo de duracao do processo:	3
+
+ESC: Escalonador saindo de coma
+
+ESC: Segundo do minuto atual: 51.2175
+
+ESC: Realizada troca de contexto para pid: 3806
+
+ESC: Escalonador dormira por: 13.7824 segundos
+
+/* Escalonador sai de coma e planeja acordar apenas na hora do real-time. Enquanto isso, fica em execução
+do round-robin */
+
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeCPU
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	27
+ESC: Tempo de duracao do processo:	6
+
+ESC: Segundo do minuto atual: 52.2178
+
+ESC: Realizada troca de contexto para pid: 3806
+
+ESC: Escalonador dormira por: 12.7822 segundos
+
+/* Novo real-time ocorre depois do primeiro, não muda o tempo de sono e round-robin permanece executando */
+
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	real-timeIO
+ESC: Politica do processo:		Real-Time
+ESC: Tempo de inicio do processo:	55
+ESC: Tempo de duracao do processo:	1
+
+ESC: Segundo do minuto atual: 53.2184
+
+ESC: Realizada troca de contexto para pid: 3806
+
+ESC: Escalonador dormira por: 1.7815 segundos
+
+/* Novo real-time ocorre antes do primeiro, então muda o tempo de sono para menor */
+
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	prioridade4CPU
+ESC: Politica do processo:		Prioridade
+ESC: Prioridade do processo:		3
+
+ESC: Segundo do minuto atual: 54.2202
+
+ESC: Pedido de execucao de novo processo de pid: 3807
+
+ESC: Escalonador dormira por: 0.7783 segundos
+
+P4CPU: Iniciando PRIORIDADE 4 de pid 3807. Contador: 0
+
+/* Enquanto nenhum real-time ocorre, prioridade 4 é inserida e interrompe round-robin. Note que os
+processos de prioridade 4 executam por 2.5 segundos, mas como o real-time ocorre antes, então o escalonador
+só dorme até a hora do real-time */
+
+ESC: Segundo do minuto atual: 55.0005
+
+ESC: Pedido de execucao de novo processo de pid: 3808
+
+ESC: Escalonador dormira por: 0.9995 segundos
+
+/* Real-time executa por um segundo, como esperado */
+
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	prioridade5IO
+ESC: Politica do processo:		Prioridade
+ESC: Prioridade do processo:		5
+
+/* P6 não possui prioridade sobre o real-time, então o real-time continua rodando. Como P6 tem prioridade 5
+e o P5 (que tem prioridade 4) já foi interrompido, então P6 possuirá prioridade sobre o próximo processo
+round-robin da lista. Assim, P6 é inserido no início da lista de round-robin e será o primeiro a executar
+no final desse real-time. */
+
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+RTIO: REAL-TIME de pid 3808
+ESC: Segundo do minuto atual: 56.0026
+
+ESC: Pedido de execucao de novo processo de pid: 3809
+
+ESC: Escalonador dormira por: 2.0000 segundos
+
+/* P6, de prioridade 5, executa como esperado */
+
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+ESC: Novo processo passado ao escalonador:
+ESC: Nome do arquivo do processo:	round-robinCPU
+ESC: Politica do processo:		Round-Robin
+
+/* P7 é round-robin então não possui prioridade superior a ninguém e será inserido no final da lista, após
+P5 de prioridade 4. A partir daqui, espera-se que a ordem de execução seja: P6 (pid 3809) -> P1 (pid 3806)
+-> P5 (pid 3807) -> P7 (pid ainda não criado) */
+
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+ESC: Segundo do minuto atual: 58.0060
+
+ESC: Realizada troca de contexto para pid: 3806
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+ESC: Segundo do minuto atual: 58.5063
+
+ESC: Realizada troca de contexto para pid: 3807
+
+ESC: Escalonador dormira por: 3.0000 segundos
+
+P4CPU: Resumindo PRIORIDADE 4 de pid 3807. Contador: 8
+ESC: Segundo do minuto atual: 1.5071
+
+ESC: Pedido de execucao de novo processo de pid: 3810
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRCPU: Iniciando ROUND-ROBIN de pid 3810. Contador: 0
+ESC: Segundo do minuto atual: 2.0082
+
+/* P7 é inserido em posição esperada e é executado com pid 3810. Ordem final: P6 (pid 3809)
+-> P1 (pid 3806) -> P5 (pid 3807) -> P7 (pid 3810). Daqui para baixo a ordem ocorre como esperada,
+intercalada pelos real-times */
+
+ESC: Realizada troca de contexto para pid: 3809
+
+ESC: Escalonador dormira por: 2.0000 segundos
+
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+P5IO: PRIORIDADE 5 de pid 3809
+ESC: Segundo do minuto atual: 4.0151
+
+ESC: Realizada troca de contexto para pid: 3806
+
+ESC: Escalonador dormira por: 0.5000 segundos
+
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+RRIO: ROUND-ROBIN de pid 3806
+ESC: Segundo do minuto atual: 4.5184
+
+P4CPU: Resumindo PRIORIDADE 4 de pid 3807. Contador: 38
+ESC: Realizada troca de contexto para pid: 3807
+
+ESC: Escalonador dormira por: 0.4816 segundos
+
+/* Ao invés de dormir por 2.5 segundos, dorme por apenas 0.5 pois real-time interromperá o processo
+P5 (P4CPU) */
+
+ESC: Segundo do minuto atual: 5.0004
+
+ESC: Pedido de execucao de novo processo de pid: 3814
+
+ESC: Escalonador dormira por: 2.9996 segundos
+
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+RTIO: REAL-TIME de pid 3814
+ESC: Segundo do minuto atual: 8.0016

@@ -1,0 +1,1 @@
+/* Cada caso específico de teste está separado nos arquivos TestesN.txt, N=1..5 */

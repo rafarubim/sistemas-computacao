@@ -1,0 +1,65 @@
+PUC-Rio	-	Trabalho de Sistemas de computação (INF1019)
+Data de entrega: 04/05/2017
+Professor: Markus Endler
+Monitora: Jéssica Almeida
+Alunos:
+Rafael Rubim Cabral					-	1511068
+Gabriel de Andrade Busquim	-	1510549
+
+	Os códigos do trabalho estão na pasta Fontes, subdivididos em:
+
+	Programas Principais:
+interpretador.c
+escalonador.c
+definicoes.h
+Módulo lista
+Módulo lstprio
+
+	Programas Auxiliares:
+round-robinIO.c
+real-timeIO.c
+prioridade1IO.c
+prioridade2IO.c
+prioridade3IO.c
+prioridade4IO.c
+prioridade5IO.c
+prioridade6IO.c
+prioridade7IO.c
+round-robinCPU.c
+real-timeCPU.c
+prioridade1CPU.c
+prioridade2CPU.c
+prioridade3CPU.c
+prioridade4CPU.c
+prioridade5CPU.c
+prioridade6CPU.c
+prioridade7CPU.c
+
+	Os executáveis (binários) e arquivo "exec.txt" em branco (pois os testes do trabalho estão documentados em 
+relatorio.txt) estão na pasta Programas executaveis. Também há 5 arquivos TestesN.txt com os testes relatados no relatório
+nessa pasta. Para serem executados, os testes devem ser copiados para exec.txt ou os arquivos devem ser renomeados para
+exec.txt. Os executáveis foram compilados da seguinte forma:
+
+	Programas Principais:
+$ gcc -Wall -o interpretador interpretador.c
+$ gcc -Wall -o escalonador escalonador.c lstprio.c lista.c -lm
+
+	Programas Auxiliares:
+$ gcc -Wall -o round-robinIO round-robinIO.c
+$ gcc -Wall -o real-timeIO real-timeIO.c
+$ gcc -Wall -o prioridade1IO prioridade1IO.c
+$ gcc -Wall -o prioridade2IO prioridade2IO.c
+$ gcc -Wall -o prioridade3IO prioridade3IO.c
+$ gcc -Wall -o prioridade4IO prioridade4IO.c
+$ gcc -Wall -o prioridade5IO prioridade5IO.c
+$ gcc -Wall -o prioridade6IO prioridade6IO.c
+$ gcc -Wall -o prioridade7IO prioridade7IO.c
+$ gcc -Wall -o round-robinCPU round-robinCPU.c
+$ gcc -Wall -o real-timeCPU real-timeCPU.c
+$ gcc -Wall -o prioridade1CPU prioridade1CPU.c
+$ gcc -Wall -o prioridade2CPU prioridade2CPU.c
+$ gcc -Wall -o prioridade3CPU prioridade3CPU.c
+$ gcc -Wall -o prioridade4CPU prioridade4CPU.c
+$ gcc -Wall -o prioridade5CPU prioridade5CPU.c
+$ gcc -Wall -o prioridade6CPU prioridade6CPU.c
+$ gcc -Wall -o prioridade7CPU prioridade7CPU.c

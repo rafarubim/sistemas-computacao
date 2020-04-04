@@ -1,0 +1,4 @@
+Exec round-robinCPU
+Exec prioridade7IO PR=7
+Exec prioridade1CPU PR=1
+Exec prioridade3IO PR=3
