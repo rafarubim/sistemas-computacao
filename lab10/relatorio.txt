@@ -1,0 +1,483 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+> Questão 1)
+
+Use o programa listaarquivo.c para imprimir o
+numero de inode, o tamanho (em bytes) e a idade
+em dias de cada arquivo do diretório corrente.
+Lembre-se que stat() espera o path completo do
+arquivo
+
+	-> Código:
+
+#include <sys/types.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <time.h>
+
+extern int alphasort();
+char pathname[MAXPATHLEN];
+
+int calcularTempoCriacao(struct stat);
+
+int main() {
+	int count,i;
+	struct direct **files;
+	
+	int file_select(const struct direct* arq) {
+		if (0 == strcmp(arq->d_name, ".") || 0 == strcmp(arq->d_name, "..")) {
+			return 0;
+		}
+		else {
+			return 1;
+		}
+	}
+	
+	if (getcwd(pathname, MAXPATHLEN) == NULL) {
+		printf("Error getting path\n");
+		exit(0);
+	}
+	printf("Current Working Directory = %s\n",pathname);
+	count = scandir(pathname, &files, file_select, alphasort);
+	/* If no files found, make a non-selectable menu item */
+	if (count <= 0) {
+		printf("No files in this directory\n");
+		exit(0);
+	}
+	printf("Number of files = %d\n", count);
+	for (i = 1; i < count+1; ++i) {
+		char pathArq[MAXPATHLEN];
+		struct stat props;
+		int dias;
+		strcpy(pathArq, pathname);
+		strcat(pathArq, "/");
+		strcat(pathArq, files[i-1]->d_name);
+		if (0 !=stat(pathArq, &props)) {
+			printf("Error reading directory stats\n");
+			exit(0);
+		}
+		dias = calcularTempoCriacao(props);
+		printf("%s\tinode: %d\tsize: %d\tage: %d days\n", files[i-1]->d_name, (int) props.st_ino, (int) props.st_size, dias);
+	}
+	printf("\n"); /* flush buffer */
+}
+
+int calcularTempoCriacao(struct stat props) {
+	long secAtual, secArq, totSecs;
+	int dias;
+	secAtual = (long) time(NULL);
+	secArq = (long) props.st_ctime;
+	totSecs = secAtual - secArq;
+	dias = totSecs / 5184000; // Quantos segundos tem um dia
+	return dias;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab10]$ gcc -Wall -o ex1 ex1.c
+[rafael@localhost lab10]$ ./ex1
+Current Working Directory = /home/rafael/inf1019/lab10
+Number of files = 10
+Mensagem	inode: 797064	size: 4096	age: 0 days
+ex1	inode: 796718	size: 9272	age: 0 days
+ex1.c	inode: 796742	size: 1619	age: 0 days
+ex2	inode: 796722	size: 9272	age: 0 days
+ex2.c	inode: 796816	size: 1653	age: 0 days
+ex3	inode: 786506	size: 9232	age: 0 days
+ex3.c	inode: 796719	size: 2783	age: 0 days
+ex4	inode: 796888	size: 13464	age: 0 days
+ex4.c	inode: 797398	size: 2992	age: 0 days
+relatorio.txt	inode: 797075	size: 10024	age: 0 days
+
+	-> Reflexão:
+
+Aprendemos a usar a função getcwd como substituição da função descontinuada getwd e a usar vetores de caracteres com paths de arquivos. Aprendemos também a usar a função stat e a estrutura direct e a função scandir para obter os nomes e paths dos arquivos de uma pasta e acessar suas propriedades. Não levamos em consideração o tempo passado desde a criação do arquivo (pois não existe), mas o tempo desde sua última mudança de estado.
+
+> Questão 2)
+
+Modifique o programa anterior para mostrar o número de
+links que cada arquivo possui. Depois, no diretório
+corrente, execute o o comando da shell
+ln <arquivo> <nomeLink> e veja o que mudou na
+saída de seu programa
+
+	-> Código:
+
+#include <sys/types.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <time.h>
+
+extern int alphasort();
+char pathname[MAXPATHLEN];
+
+int calcularTempoCriacao(struct stat);
+
+int main() {
+	int count,i;
+	struct direct **files;
+	
+	int file_select(const struct direct* arq) {
+		if (0 == strcmp(arq->d_name, ".") || 0 == strcmp(arq->d_name, "..")) {
+			return 0;
+		}
+		else {
+			return 1;
+		}
+	}
+	
+	if (getcwd(pathname, MAXPATHLEN) == NULL) {
+		printf("Error getting path\n");
+		exit(0);
+	}
+	printf("Current Working Directory = %s\n",pathname);
+	count = scandir(pathname, &files, file_select, alphasort);
+	/* If no files found, make a non-selectable menu item */
+	if (count <= 0) {
+		printf("No files in this directory\n");
+		exit(0);
+	}
+	printf("Number of files = %d\n", count);
+	for (i = 1; i < count+1; ++i) {
+		char pathArq[MAXPATHLEN];
+		struct stat props;
+		int dias;
+		strcpy(pathArq, pathname);
+		strcat(pathArq, "/");
+		strcat(pathArq, files[i-1]->d_name);
+		if (0 != stat(pathArq, &props)) {
+			printf("Error reading directory stats\n");
+			exit(0);
+		}
+		dias = calcularTempoCriacao(props);
+		printf("%s\tinode: %d\tsize: %d\tage: %d days\tlinks: %d\n", files[i-1]->d_name, (int) props.st_ino, (int) props.st_size, dias, (int) props.st_nlink);
+	}
+	printf("\n"); /* flush buffer */
+}
+
+int calcularTempoCriacao(struct stat props) {
+	long secAtual, secArq, totSecs;
+	int dias;
+	secAtual = (long) time(NULL);
+	secArq = (long) props.st_ctime;
+	totSecs = secAtual - secArq;
+	dias = totSecs / 5184000; // Quantos segundos tem um dia
+	return dias;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab10]$ gcc -Wall -o ex2 ex2.c
+[rafael@localhost lab10]$ ./ex2
+Current Working Directory = /home/rafael/inf1019/lab10
+Number of files = 10
+Mensagem	inode: 797064	size: 4096	age: 0 days	links: 3
+ex1	inode: 797078	size: 9272	age: 0 days	links: 1
+ex1.c	inode: 796742	size: 1619	age: 0 days	links: 1
+ex2	inode: 796722	size: 9272	age: 0 days	links: 1
+ex2.c	inode: 796816	size: 1653	age: 0 days	links: 1
+ex3	inode: 786506	size: 9232	age: 0 days	links: 1
+ex3.c	inode: 796719	size: 2783	age: 0 days	links: 1
+ex4	inode: 796888	size: 13464	age: 0 days	links: 1
+ex4.c	inode: 797398	size: 2992	age: 0 days	links: 1
+relatorio.txt	inode: 797076	size: 10615	age: 0 days	links: 1
+
+[rafael@localhost lab10]$ ln ex1 link1
+[rafael@localhost lab10]$ ln ex1 link2
+[rafael@localhost lab10]$ ln ex2 link3
+[rafael@localhost lab10]$ ./ex2
+Current Working Directory = /home/rafael/inf1019/lab10
+Number of files = 13
+Mensagem	inode: 797064	size: 4096	age: 0 days	links: 3
+ex1	inode: 797078	size: 9272	age: 0 days	links: 3
+ex1.c	inode: 796742	size: 1619	age: 0 days	links: 1
+ex2	inode: 796722	size: 9272	age: 0 days	links: 2
+ex2.c	inode: 796816	size: 1653	age: 0 days	links: 1
+ex3	inode: 786506	size: 9232	age: 0 days	links: 1
+ex3.c	inode: 796719	size: 2783	age: 0 days	links: 1
+ex4	inode: 796888	size: 13464	age: 0 days	links: 1
+ex4.c	inode: 797398	size: 2992	age: 0 days	links: 1
+link1	inode: 797078	size: 9272	age: 0 days	links: 3
+link2	inode: 797078	size: 9272	age: 0 days	links: 3
+link3	inode: 796722	size: 9272	age: 0 days	links: 2
+relatorio.txt	inode: 797076	size: 10615	age: 0 days	links: 1
+
+	-> Reflexão:
+
+A única diferença da questão anterior é a impressão também da propriedade nlink de cada arquivo. Após usar o comando ln para criar links de arquivos no terminal executamos novamente o programa (como mostrado acima). Novos arquivos foram criados (os links) e o número total de links de cada um foi corretamente impresso.
+
+> Questão 3)
+
+Escreva um programa que percorre recursivamente um
+diretório, a partir do diretório corrente, somando o
+tamanho de todos os arquivos encontrados.
+
+	-> Código:
+
+#include <sys/types.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <time.h>
+
+char pathname[MAXPATHLEN];
+
+int calcularTamanhoArquivos(const char* path);
+
+int main() {
+	int tamArqs;
+	
+	if (getcwd(pathname, MAXPATHLEN) == NULL) {
+		printf("Error getting path\n");
+		exit(0);
+	}
+	printf("Current Working Directory = %s\n", pathname);
+	tamArqs = calcularTamanhoArquivos(pathname);
+	printf("Directory total size in bytes = %d\n", tamArqs);
+}
+
+int calcularTamanhoArquivoRec(const char* path, DIR* pastaAberta) {
+	struct stat props;
+	// Ler status do arquivo passado
+	if (0 != stat(path, &props)) {
+		printf("Error reading directory stats\n");
+		exit(0);
+	}
+	// Se for uma pasta
+	if (S_ISDIR(props.st_mode)) {
+		struct direct* arq;
+		char pathArq[MAXPATHLEN];
+		int tamArq;
+		// Se a pasta ainda não tiver sido aberta, abri-la e contar seu tamanho
+		if (pastaAberta == NULL) {
+			int tamDir;
+			pastaAberta = opendir(path);
+			if (pastaAberta == NULL) {
+				printf("Error opening directory stream\n");
+				exit(0);
+			}
+			
+			tamDir = (int) props.st_size;
+			return tamDir + calcularTamanhoArquivoRec(path, pastaAberta);
+		}
+		// Ler o próximo arquivo da pasta
+		arq = readdir(pastaAberta);
+		// Se não há mais arquivos na pasta
+		if (arq == NULL) {
+			// Fechar pasta que havia sido aberta
+			if (0 != closedir(pastaAberta)) {
+				printf("Error closing directory stream\n");
+				exit(0);
+			}			
+			// Retornar zero
+			return 0;
+		}
+		// Se um arquivo foi lido na pasta
+		
+		// Se o arquivo é a própria pasta ou a pasta pai, não deve ser contado.
+		// Portanto seu tamanho é considerado 0.
+		if (0 == strcmp(arq->d_name, ".") || 0 == strcmp(arq->d_name, "..")) {
+			tamArq = 0;
+		}
+		// Se o arquivo é um outro arquivo qualquer cujo tamanho deve ser contado
+		// então deve-se calcular recursivamente o tamanho dele.
+		else {
+			// Obter path do arquivo
+			strcpy(pathArq, path);
+			strcat(pathArq, "/");
+			strcat(pathArq, arq->d_name);
+			// Calcular tamanho do arquivo recursivamente (pode ser uma pasta)
+			// Novas pastas deverão ser reabertas, por isso o segundo parâmetro é NULL
+			tamArq = calcularTamanhoArquivoRec(pathArq, NULL);
+		}
+		// Retornar tamanho do arquivo lido + tamanho dos próximos arquivos
+		// da pasta. Por isso o segundo parâmetro é a pasta já aberta
+		return tamArq + calcularTamanhoArquivoRec(path, pastaAberta);
+	}
+	// Caso base: se não for uma pasta, retornar o tamanho do arquivo
+	else {
+		return (int) props.st_size;
+	}
+}
+
+int calcularTamanhoArquivos(const char* path) {
+	// Cápsula chama recursiva passando um parâmetro NULL que indica que não há pastas abertas atualmente.
+	return calcularTamanhoArquivoRec(path, NULL);
+}
+
+	-> Terminal:
+
+[rafael@localhost lab10]$ gcc -Wall -o ex3 ex3.c
+[rafael@localhost lab10]$ ./ex3
+Current Working Directory = /home/rafael/inf1019/lab10
+Directory total size in bytes = 74778
+
+	-> Propriedades reais da pasta lab10:
+
+15 itens, totalizando 70,7 kB
+
+	-> Reflexão:
+
+Nós implementamos a função recursiva da seguinte maneira: para cada arquivo, ela roda individualmente uma vez. Se ela recebe o path de um arquivo que não é um diretório, ela retorna o tamanho do arquivo. Se ela recebe um diretório, ela retorna o tamanho do diretório + o tamanho dos arquivos internos do diretório (incluindo outros diretórios e seu conteúdo). Para calcular o tamanho total do conteúdo de um diretório, a função recursiva faz o seguinte: se o diretório ainda não havia sido aberto em stream, abre-o e soma ao conteúdo total o tamanho do diretório. Se o diretório já foi aberto para stream, a recursiva usa a função readdir para ler um arquivo do diretório e soma seu tamanho ao conteúdo total do diretório (ignora os tamanhos dos arquivos . e ..). Como a recursiva não reabre o stream do diretório, mas simplesmente lê o próximo arquivo, em determinado momento todas as chamadas recursivas já terão calculado o tamanho de todo o conteúdo do diretório, pois todos os arquivos já terão sido lidos e readdir retornará NULL. Nesse momento a recursiva que foi chamada com o path do diretório fecha o stream do diretório aberto e retorna o tamanho do conteúdo total. Como a função é recursiva, isso funciona mesmo quando há diretórios dentro de diretórios. O segundo parâmetro da função recursiva serve para controlar quando um stream de diretório é aberto/fechado. No teste realizado acima, percebemos que o programa calculou bem o tamanho total da pasta em que foi rodado, pois na prática, a pasta possuía 70,7 kB e obtivemos 74778 bytes. Acreditamos que a diferença vem do fato que o dado 70,7 kB não leva em conta o tamanho do diretório inicial em si, e por testes descobrimos que os diretórios possuem tamanho 4096 bytes.
+
+> Questão 4)
+
+Modifique o programa anterior para mostrar
+recursivamente os diretórios e arquivos aninhados.
+
+	-> Código:
+
+#include <sys/types.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <time.h>
+
+char pathname[MAXPATHLEN];
+
+void imprimirArquivos(const char* path);
+
+int main() {
+	
+	if (getcwd(pathname, MAXPATHLEN) == NULL) {
+		printf("Error getting path\n");
+		exit(0);
+	}
+	printf("Current Working Directory = %s\n", pathname);
+	imprimirArquivos(pathname);
+}
+
+void imprimirArquivoPath(const char* path, int ident, int boolEhPasta) {
+	int i;
+	char* nomeArq;
+	for (i = 0; i < ident; i++) {
+		if (i == ident - 1) {
+			if (boolEhPasta) {
+				printf("*");
+			}
+			else {
+				printf("-");
+			}
+		}
+		printf("\t");
+	}
+	nomeArq = rindex(path, '/');
+	nomeArq++;
+	printf("%s", nomeArq);
+	if (boolEhPasta) {
+		printf(" (directory)");
+	}
+	printf("\n");
+}
+
+void imprimirArquivoRec(const char* path, DIR* pastaAberta, int ident) {
+	struct stat props;
+	// Ler status do arquivo passado
+	if (0 != stat(path, &props)) {
+		printf("Error reading directory stats\n");
+		exit(0);
+	}
+	// Se for uma pasta
+	if (S_ISDIR(props.st_mode)) {
+		struct direct* arq;
+		char pathArq[MAXPATHLEN];
+		
+		// Se a pasta ainda não tiver sido aberta, abri-la
+		if (pastaAberta == NULL) {
+			pastaAberta = opendir(path);
+			if (pastaAberta == NULL) {
+				printf("Error opening directory stream\n");
+				exit(0);
+			}
+			imprimirArquivoPath(path, ident, 1);
+			// Imprimir resto dos arquivos, aumentando a identação
+			imprimirArquivoRec(path, pastaAberta, ident+1);
+			return;
+		}
+		// Ler o próximo arquivo da pasta
+		arq = readdir(pastaAberta);
+		// Se não há mais arquivos na pasta
+		if (arq == NULL) {
+			// Fechar pasta que havia sido aberta
+			if (0 != closedir(pastaAberta)) {
+				printf("Error closing directory stream\n");
+				exit(0);
+			}			
+			// Retornar
+			return;
+		}
+		// Se um arquivo foi lido na pasta
+		
+		// Se o arquivo é a própria pasta ou a pasta pai, não deve ser impresso.
+		// Se o arquivo é um outro arquivo qualquer que deve ser impresso
+		// então deve-se imprimi-lo recursivamente.
+		if (0 != strcmp(arq->d_name, ".") && 0 != strcmp(arq->d_name, "..")) {
+			// Obter path do arquivo
+			strcpy(pathArq, path);
+			strcat(pathArq, "/");
+			strcat(pathArq, arq->d_name);
+			// Imprimir arquivo recursivamente (pode ser uma pasta)
+			// Novas pastas deverão ser reabertas, por isso o segundo parâmetro é NULL
+			imprimirArquivoRec(pathArq, NULL, ident);
+		}
+		// Deve-se imprimir próximos arquivos da pasta.
+		// Por isso o segundo parâmetro é a pasta já aberta
+		imprimirArquivoRec(path, pastaAberta, ident);
+	}
+	// Caso base: se não for uma pasta, imprimir o nome do arquivo com a identação adequada
+	else {
+		imprimirArquivoPath(path, ident, 0);
+	}
+}
+
+void imprimirArquivos(const char* path) {
+	// Cápsula chama recursiva passando um parâmetro NULL que indica
+	// que não há pastas abertas atualmente e um parâmetro 0 que é a identação inicial.
+	imprimirArquivoRec(path, NULL, 0);
+}
+
+	-> Terminal:
+
+[rafael@localhost lab10]$ gcc -Wall -o ex4 ex4.c
+[rafael@localhost lab10]$ ./ex4
+Current Working Directory = /home/rafael/inf1019/lab10
+lab10 (directory)
+-	relatorio.txt
+-	ex1
+*	Mensagem (directory)
+	-	Boas.txt
+	-	Ferias.txt
+	*	Obrigado (directory)
+		-	Por tudo.txt
+	-	Jessica!.txt
+-	ex4.c
+-	ex2.c
+-	ex3
+-	ex1.c
+-	ex3.c
+-	ex4
+-	ex2
+
+	-> Reflexão:
+
+Ao fazermos a recursiva, poderíamos ter feito a função percorrer os arquivos de uma pasta e apenas chamar-se recursivamente quando encontrasse outra pasta dentro da pasta. Acabamos não fazendo assim, mas chamando a recursiva para cada arquivo percorrido, o que impossibilitou a implementação exata da dica do enunciado da questão. Acrescentamos um novo parâmetro à função recursiva que representa o nível de indentação que só é incrementado quando se entra em uma nova pasta. A função simplesmente deixou de retornar o tamanho dos arquivos e passou a imprimi-los conforme são percorridos, escrevendo (directory) ao lado de diretórios.

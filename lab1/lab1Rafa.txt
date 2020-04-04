@@ -1,0 +1,196 @@
+1)
+	->	Código do programa:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <stdlib.h>
+
+int main() {
+	
+	int pid, status;
+	
+	pid = fork();
+	
+	if (pid != 0) {	/* Processo pai */
+		int meuPid = getpid();
+		printf("Ola! O pid do pai eh: %d\n", meuPid);
+		waitpid(pid, &status, 0);
+	} else {	/* Processo filho */
+		pid = getpid();
+		printf("Oiii! O pid do filho eh: %d\n", pid);
+		exit(0);
+	}
+	
+	return 0;
+}
+
+	->	Chamada/Resultados:
+
+[rafael@localhost lab1]$ gcc -Wall -o ex1 ex1.c
+[rafael@localhost lab1]$ ./ex1
+Ola! O pid do pai eh: 3114
+Oiii! O pid do filho eh: 3115
+
+	->	Reflexão:
+
+Observando a saída do programa, vemos que após o uso do comando fork, criou-se um processo filho idêntico ao processo pai mas que possui um pid diferente com o valor 1 a mais e entrou no else ao invés do if.
+
+2)
+	->	Código do programa:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <stdlib.h>
+
+int main() {
+	
+	int pid, status;
+	
+	int variavel = 1;
+	
+	printf("A variavel possui valor %d antes do fork\n", variavel);	
+	
+	pid = fork();
+	
+	if (pid != 0) {	/* Processo pai */
+	
+		waitpid(pid, &status, 0);
+	} else {	/* Processo filho */
+		
+		variavel = 5;
+		printf("A variavel possui valor %d no filho\n", variavel);	
+		exit(0);
+	}
+	/* Apos filhos terminarem */
+	printf("A variavel possui valor %d apos o final do filho\n", variavel);	
+	return 0;
+}
+
+	->	Chamada/Resultados:
+
+[rafael@localhost lab1]$ gcc -Wall -o ex2 ex2.c
+[rafael@localhost lab1]$ ./ex2
+A variavel possui valor 1 antes do fork
+A variavel possui valor 5 no filho
+A variavel possui valor 1 apos o final do filho
+
+
+	->	Reflexão:
+
+Observando a saída do programa,vemos que o valor de var não mudou após sua alteração dentro do processo filho. Isso decorre do fato do processo filho copia as áreas de memória do processo pai, além do código, logo as alterações às variáveis de um processo são independentes do outro.
+
+3)
+	->	Código do programa:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <stdlib.h>
+
+int compararCrescente (const void * a, const void * b)
+{
+   return ( *(int*)a - *(int*)b );
+}
+
+void imprimirVetorInt(int vet[], int n) {
+	int i;
+	printf("{");
+	for (i = 0; i < n; i++)
+		printf("%d,", vet[i]);
+	printf("}");
+}
+
+int main() {
+	
+	int pid, status;
+	
+	int vet[] = {5,6,4,3,7,2,1}, tamVet = 7;
+	
+	printf("Vetor antes do fork (no pai): ");
+	imprimirVetorInt(vet, tamVet);
+	puts("");
+	
+	pid = fork();
+	
+	if (pid != 0) {	/* Processo pai */
+	
+		waitpid(pid, &status, 0);
+	} else {	/* Processo filho */
+		
+		qsort(vet, tamVet, sizeof(int), compararCrescente);	
+		printf("Vetor no filho, apos ordenar: ");
+		imprimirVetorInt(vet, tamVet);
+		puts("");
+		
+		exit(0);
+	}
+	/* Apos filhos terminarem */
+	printf("Vetor depois do fork (no pai): ");
+	imprimirVetorInt(vet, tamVet);
+	puts("");
+	
+	return 0;
+}
+
+	->	Chamada/Resultados:
+
+[rafael@localhost lab1]$ gcc -Wall -o ex3 ex3.c
+[rafael@localhost lab1]$ ./ex3
+Vetor antes do fork (no pai): {5,6,4,3,7,2,1,}
+Vetor no filho, apos ordenar: {1,2,3,4,5,6,7,}
+Vetor depois do fork (no pai): {5,6,4,3,7,2,1,}
+
+	->	Reflexão:
+
+Observando a saída do programa,vemos que o vetor foi ordenado somente dentro do processo filho, pois dentro do processo pai ele se manteve o mesmo. Assim como foi ilustrado no exercício anterior, isso acontece porque as áreas de memória foram copiadas na criação do processo, inclusive o buffer inteiro do vetor, o que mantém a memória dos processos independente, logo, os processos não usam o mesmo vetor.
+
+4)
+	->	Código do programa principal:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <stdlib.h>
+
+int main() {
+	
+	int pid, status;
+	
+	char str1[] = "ex4Aux";
+	char str2[] = "echo";
+	char str3[] = "jessica eh legal";
+	
+	char *const argv1[] = {str1, NULL};
+	char *const argv2[] = {str2, str3, NULL};
+	
+	pid = fork();
+	
+	if (pid != 0) {	/* Processo pai */
+		
+		execv("/usr/bin/echo", argv2);
+		printf("Depois do exec do echo\n");
+		waitpid(pid, &status, 0);
+	} else {	/* Processo filho */
+		
+		execv("./ex4Aux", argv1);
+		printf("Depois do exec do programa auxiliar\n");
+		exit(0);
+	}
+	/* Apos filhos terminarem */
+	
+	return 0;
+}
+
+	->	Chamada/Resultados:
+
+[rafael@localhost lab1]$ gcc -Wall -o ex4Aux ex4Aux.c
+[rafael@localhost lab1]$ gcc -Wall -o ex4 ex4.c
+[rafael@localhost lab1]$ ./ex4
+jessica eh legal
+Esse eh um programa auxiliar! EEEEE
+
+	->	Reflexão:
+
+Aprendemos a usar a função execv onde, passando um programa diferente (executável), através de seu path e seus parâmetros, pode-se executá-lo como processo independente, finalizando o processo que o chamou, pois não ocorreu a impressão na tela que tentamos depois de chamar o exec em cada processo. Aprendemos também o path do executável do comando de terminal "echo" no Unix.

@@ -1,0 +1,382 @@
+Nomes:
+Rafael Rubim		- 1511068
+Gabriel Busquim - 1510549
+
+	-> Questão 1)
+
+Faça um programa para somar matrizes de acordo 
+com o seguinte algoritmo
+-> O primeiro processo irá criar duas matrizes 
+preenchidas e uma terceira vazia em 3 áreas de 
+memória compartilhada.
+-> Para cada linha da matriz solução, o seu 
+programa deverá gerar um processo para o seu 
+cálculo.
+
+	-> Código:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/ipc.h>
+#include <stdlib.h>
+
+#define M 4
+#define N 5
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+void imprimirMatriz(int *mat) {
+	int i, j;
+	for (i = 0; i < M; i++) {
+		printf("|\t");
+		for(j = 0; j < N; j++) {
+			int idx = i*N + j;
+			printf("%d\t",mat[idx]);
+		}
+		printf("|\n");
+	}
+}
+
+int main() {
+	int seg1, seg2, seg3, i, id, linha;
+	int pid[M-1];
+	int *mat1, *mat2, *mat3;
+	seg1 = shmget(IPC_PRIVATE, M*N*sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+	seg2 = shmget(IPC_PRIVATE, M*N*sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+	seg3 = shmget(IPC_PRIVATE, M*N*sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+	if (seg1 == -1 || seg2 == -1 || seg3 == -1) {
+		erro("Memoria compartilhada incriavel");
+	}
+	mat1 = (int*) shmat(seg1, NULL, 0);
+	mat2 = (int*) shmat(seg2, NULL, 0);
+	mat3 = (int*) shmat(seg3, NULL, 0);
+	if (mat1 == (int*)-1 || mat2 == (int*)-1 || mat3 == (int*)-1) {
+		erro("Memoria compartilhada inligavel");
+	}
+	for (i = 0; i < M*N; i++) { /* preencher vetores */
+		mat1[i] = i;
+		mat2[i] = M*N-1-i;
+	}
+	linha = 0; /* número da linha da matriz com a qual o processo atual deve trabalhar */
+	/* o processo pai trabalhará com a linha 0 */
+	
+	/* cria-se M-1 processos para cuidar das outras linhas */
+	for (i = 0; i < M-1; i++) {
+		if ((id = fork()) < 0) { /* criar processo */
+			erro("Impossivel criar processo");
+		}
+		else if (id == 0) {
+			linha = i + 1; /* nova linha é atribuída ao processo filho */
+			break; /* processo filho não deve continuar no for, pois só pai cria novos processos */
+		}
+		else {
+			pid[i] = id; /* salvar pid do processo filho recém-criado */
+		}
+	}
+	for (i = 0; i < N; i++) { /* cada processo calcula a soma de sua linha */
+		int idx = linha*N + i;
+		mat3[idx] = mat1[idx] + mat2[idx];
+	}
+	if (id == 0) { /* faz o detach e mata os processos filhos */
+		if (-1 == shmdt(mat1) || -1 == shmdt(mat2) || -1 == shmdt(mat3)) {
+			erro("Impossivel deligar memoria compartilhada do processo filho");
+		}
+		exit(0);
+	}
+	else {
+		for (i = 0; i < M-1; i++) { /* pai espera cada processo terminar */
+			waitpid(pid[i], NULL, 0);
+		}
+	}
+	
+	/* Imprimir matrizes finais */
+	puts("Matriz 1:");
+	imprimirMatriz(mat1);
+	puts("Matriz 2:");
+	imprimirMatriz(mat2);
+	puts("Matriz soma:");
+	imprimirMatriz(mat3);
+	
+	/* faz o detach do pai */
+	if (-1 == shmdt(mat1) || -1 == shmdt(mat2) || -1 == shmdt(mat3)) {
+		erro("Impossivel deligar memoria compartilhada do processo pai");
+	}
+	
+	/* libera memoria compartilhada */
+	if (-1 == shmctl(seg1, IPC_RMID, NULL) || -1 == shmctl(seg2, IPC_RMID, NULL) || -1 == shmctl(seg3, IPC_RMID, NULL)) {
+		erro("Impossivel liberar memoria compartilhada");
+	}
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab2]$ gcc -Wall -o ex1 ex1.c
+[rafael@localhost lab2]$ ./ex1
+Matriz 1:
+|	0	1	2	3	4	|
+|	5	6	7	8	9	|
+|	10	11	12	13	14	|
+|	15	16	17	18	19	|
+Matriz 2:
+|	19	18	17	16	15	|
+|	14	13	12	11	10	|
+|	9	8	7	6	5	|
+|	4	3	2	1	0	|
+Matriz soma:
+|	19	19	19	19	19	|
+|	19	19	19	19	19	|
+|	19	19	19	19	19	|
+|	19	19	19	19	19	|
+
+	-> Reflexão:
+	
+Aprendemos a criar a memória compartilhada e a utilizá-la, quando usar attach e quando usar detach e a liberá-la somente no processo pai. Descobrimos também a importância de sincronizar os processos, pois se a matriz fosse impressa antes de usar o waitpid, os processos filhos ainda não haviam somado as linhas. Bj Jéssica.
+
+	-> Questão 2)
+Faça um programa que: 
+-> Leia uma mensagem do dia 
+-> Crie uma memória compartilhada com a chave 8752
+-> Salve a mensagem na memória 
+Faça um outro programa que utilize a mesma chave (8752) e exiba a mensagem do dia para o usuário
+
+	-> Código do ex 2.1:
+
+#include <stdio.h>
+#include <sys/shm.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/ipc.h>
+#include <unistd.h>
+#include <wait.h>
+
+#define SHMKEY 8752
+#define TAMMSG 144 /* tamanho máximo da mensagem */
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	int shmId, pid;
+	char msgDia[TAMMSG+1], *shmP;
+	char* const argv[] = {"ex2.2", NULL};
+	shmId = shmget(SHMKEY, (TAMMSG+1)*sizeof(char), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+	if (shmId == -1) {
+		erro("Nao rolou criar essa memoria ai");
+	}
+	shmP = (char*) shmat(shmId, NULL, 0);
+	if (shmP == (char*)-1) {
+		erro("Impossivel fazer attach. Oh nao!");
+	}
+	printf("Digite sua mensagem para o mundo ouvir! (max %d caracteres)\n", TAMMSG);
+	scanf(" %144[^\n]", msgDia);
+	strcpy(shmP, msgDia);
+	if((pid = fork()) < 0) {
+		erro("Impossivel criar novo processo");
+	}
+	else if (pid == 0) {
+		execv("./ex2.2", argv);
+	}
+	else {
+		waitpid(pid, NULL, 0);
+	}
+	if (-1 == shmdt(shmP)) {
+		erro("Detach nao funciona. O problema está entre o monitor e a cadeira.");
+	}
+	if (-1 == shmctl(shmId, IPC_RMID, NULL)) {
+		erro("Memoria compartilhada indestrutivel. Chamem os incriveis!");
+	}
+	return 0;
+}
+
+	-> Código do ex 2.2:
+
+#include <stdio.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+
+#define SHMKEY 8752
+#define TAMMSG 144 /* tamanho máximo da mensagem */
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	int shmId;
+	char *shmP;
+	shmId = shmget(SHMKEY, TAMMSG, S_IRUSR | S_IWUSR);
+	if (shmId == -1) {
+		erro("Memoria compartilhada inacessivel");
+	}
+	shmP = (char*) shmat(shmId, NULL, 0);
+	if (shmP == (char*)-1) {
+		erro("Nao houve attach :(");
+	}
+	printf("A mensagem do dia eh: %s\n", shmP);
+	if (-1 == shmdt(shmP)) {
+		erro("Detach nao funciona. O problema está entre o monitor e a cadeira.");
+	}
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab2]$ gcc -Wall -o ex2.1 ex2.1.c
+[rafael@localhost lab2]$ gcc -Wall -o ex2.2 ex2.2.c
+[rafael@localhost lab2]$ ./ex2.1
+Digite sua mensagem para o mundo ouvir! (max 144 caracteres)
+Jessica vai nos dar 10
+A mensagem do dia eh: Jessica vai nos dar 10
+
+	-> Reflexão:
+
+Ao fazer esse exercício, percebemos que a memória compartilhada é "visível" a qualquer processo do computador, desde que conheça a chave de identificação desse bloco de memória antes. Descobrimos também que o id que a função shmget recebe é diferente do id que ela retorna. O id que ela recebe é referente à memória "geral" do computador, ao passo que o id que ela retorna é um identificador local da memória para fazer o attach.
+
+	-> Questão 3)
+
+Faça um programa paralelo para localizar uma chave em um vetor. 
+-> Crie uma memória compartilhada com dados numéricos inteiros e desordenados e a divida pelo número de processos 
+-> Cada processo deve procurar o dado na sua área de memória e informar a posição onde o dado foi localizado
+
+	-> Código:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/ipc.h>
+#include <stdlib.h>
+#include <math.h>
+
+#define PI 3.14159265
+#define NELEMS 15
+#define NTHREADS 3
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+
+int main() {
+	int shmIdVec, shmIdRes, i, id, idxInicial, idxFinal, numProcurados, idxRes, numProc, posProc;
+	int pid[NTHREADS-1];
+	int *shmVec, *shmRes;
+	shmIdVec = shmget(IPC_PRIVATE, NELEMS*sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+	shmIdRes = shmget(IPC_PRIVATE, NTHREADS*sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+	if (shmIdVec == -1 || shmIdRes == -1) {
+		erro("Memoria compartilhada incriavel");
+	}
+	shmVec = (int*) shmat(shmIdVec, NULL, 0);
+	shmRes = (int*) shmat(shmIdRes, NULL, 0);
+	if (shmVec == (int*)-1 || shmRes == (int*)-1) {
+		erro("Memoria compartilhada inligavel");
+	}
+	
+	for (i = 0; i < NELEMS; i++) { /* preencher vetor */
+		shmVec[i] = (int) 100*sin(i*2.*PI/NELEMS);
+	}
+	
+	printf("Vetor: {"); /* imprimir vetor */
+	for (i = 0; i < NELEMS; i++) {
+		printf("%d,", shmVec[i]);
+	}
+	printf("}\n");
+	
+	printf("RESPONDA RAPIDO! Qual elemento voce deseja procurar?\n");
+	scanf(" %d", &numProc);
+	
+	numProcurados = NELEMS/NTHREADS; /* número de elementos que cada thread escaneia do vetor */
+	idxInicial = (NTHREADS - 1) * numProcurados; /* processo pai escaneia últimos elementos */
+	idxFinal = NELEMS - 1;
+	idxRes = NTHREADS - 1; /* Posição utilizada pelo processo pai para salvar o resultado de sua busca no vetor de resultados */
+	
+	/* cria-se NTHREADS-1 processos para procurar no vetor */
+	for (i = 0; i < NTHREADS-1; i++) {
+		if ((id = fork()) < 0) { /* criar processo */
+			erro("Impossivel criar processo");
+		}
+		else if (id == 0) {
+			idxInicial = i * numProcurados;
+			idxFinal = (i + 1) * numProcurados - 1;
+			idxRes = i;
+			break; /* processo filho não deve continuar no for, pois só pai cria novos processos */
+		}
+		else {
+			pid[i] = id; /* salvar pid do processo filho recém-criado */
+		}
+	}
+	shmRes[idxRes] = -1; /* Vetor de resultados começa com -1 (que significa que numero procurado nao foi encontrado) */
+	for (i = idxInicial; i <= idxFinal; i++) { /* cada processo escaneia sua parte do vetor */
+		if (shmVec[i]  == numProc) {
+			shmRes[idxRes] = i; /* se numero procurado foi encontrado, o processo salva na area de resultados relativa à ele */
+			break;
+		}
+	}
+	if (id == 0) { /* faz o detach e mata os processos filhos */
+		if (-1 == shmdt(shmVec) || -1 == shmdt(shmRes)) {
+			erro("Impossivel deligar memoria compartilhada do processo filho");
+		}
+		exit(0);
+	}
+	else {
+		for (i = 0; i < NTHREADS-1; i++) { /* pai espera cada processo filho terminar */
+			waitpid(pid[i], NULL, 0);
+		}
+	}
+	
+	posProc = -1;
+	for (i = 0; i < NTHREADS; i++) { /* Pai procura se o numero foi encontrado no vetor de resultados */
+		if (shmRes[i] != -1) {
+			posProc = shmRes[i];
+			break;
+		}
+	}
+	
+	switch(posProc) {
+		case -1:
+			printf("O numero procurado nao esta no vetor. Que pena!\n");
+			break;
+		default:
+			printf("O numero procurado esta na posicao %d do vetor. Que incrivel!\n", posProc+1);
+	}
+	
+	/* faz o detach do pai */
+	if (-1 == shmdt(shmVec) || -1 == shmdt(shmRes)) {
+		erro("Impossivel deligar memoria compartilhada do processo pai");
+	}
+	
+	/* libera memoria compartilhada */
+	if (-1 == shmctl(shmIdVec, IPC_RMID, NULL) || -1 == shmctl(shmIdRes, IPC_RMID, NULL)) {
+		erro("Impossivel liberar memoria compartilhada");
+	}
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab2]$ gcc -Wall -lm -o ex3 ex3.c
+[rafael@localhost lab2]$ ./ex3
+Vetor: {0,40,74,95,99,86,58,20,-20,-58,-86,-99,-95,-74,-40,}
+RESPONDA RAPIDO! Qual elemento voce deseja procurar?
+-99
+O numero procurado esta na posicao 12 do vetor. Que incrivel!
+
+	-> Reflexão:
+
+Esse exercício é muito parecido com o primeiro. Nesse, porém, tivemos de divir os elementos que cada processo escanearia (ao invés de um número fixo) e criar um vetor de resultados, através do qual os processos retornaram -1 no caso de não encontrar o elemento procurado ou o índice encontrado, e foi necessária fazer depois uma busca nesse vetor de resultados para encontrar o primeiro elemento que era -1. Usamos a função seno para criar um vetor inicialmente não ordenado. Desculpa Jéssica.
+
+Já acabou, Jéssica? Siiiim! ebaaaaa

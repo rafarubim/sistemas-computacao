@@ -1,0 +1,213 @@
+1)
+	->	Código do programa:
+
+#include<stdio.h>
+#include<unistd.h>
+#include <wait.h>
+
+int main()
+{
+	int status;
+        int pid=fork();
+	if(pid!=0) /*pai*/
+	{	int pidpai=getpid();
+		printf("Pid do pai:%d\n",pidpai);
+		waitpid(-1,&status,0);
+	}
+	else /*filho*/
+	{
+		int pidfilho=getpid();
+		printf("Pid do filho:%d\n",pidfilho);
+	}	
+	return 0;
+}
+
+/*Chamada:
+No terminal:
+gcc -Wall -o ex1 ex1.c
+./ex1
+
+Saída:
+Pid do pai:2991
+Pid do filho:2992
+
+Reflexão:
+Observando a saída do programa, vemos que após o uso do comando fork, criou-se um processo filho idêntico ao processo pai mas que possui um pid diferente com o valor 1 a mais e entrou no else ao invés do if.*/
+
+2)
+	->	Código do programa:
+	
+#include<stdio.h>
+#include<unistd.h>
+#include <wait.h>
+#include<stdlib.h>
+
+int main()
+{
+	int status;
+	int var=1;
+	printf("Valor de var antes do fork():%d\n",var);
+        int pid=fork();
+	if(pid!=0) /*pai*/
+	{	
+		waitpid(-1,&status,0);
+		printf("Valor de var apos a mudanca no filho:%d\n",var);
+	}
+	else /*filho*/
+	{
+		var=5;
+		printf("Valor de var no filho:%d\n",var);
+		exit(1);
+	}
+		
+	return 0;
+}
+
+/*Chamada:
+No terminal:
+gcc -Wall -o ex2 ex2.c
+./ex2
+
+Saída:
+Valor de var antes do fork():1
+Valor de var no filho:5
+Valor de var apos a mudanca no filho:1
+
+Reflexão:
+Observando a saída do programa,vemos que o valor de var não mudou após sua alteração dentro do processo filho. Isso decorre do fato do processo filho copia as áreas de memória do processo pai, além do código, logo as alterações às variáveis de um processo são independentes do outro. */
+
+3)
+	->	Código do programa:
+
+#include<stdio.h>
+#include<unistd.h>
+#include <wait.h>
+#include<stdlib.h>
+
+int compCrescente (const void * a, const void * b)
+{
+   return (*(int*)a -*(int*)b);
+}
+
+
+int main()
+{
+	int status;
+	int i;
+	int vet[10]={5,7,1,3,4,0,6,3,8,9};
+	printf("Antes da ordenacao:\n");
+	for(i=0;i<10;i++)
+	{
+		printf("%d\n",vet[i]);
+	}
+        int pid=fork();
+	if(pid!=0) /*pai*/
+	{	
+		waitpid(-1,&status,0);
+		printf("Depois da ordenacao:\n");
+		for(i=0;i<10;i++)
+		{
+			printf("%d\n",vet[i]);
+		}
+	}
+	else /*filho*/
+	{
+		qsort(vet,10,sizeof(int),compCrescente);
+		exit(1);
+	}
+		
+	return 0;
+}
+
+/*Chamada:
+No terminal:
+gcc -Wall -o ex3 ex3.c
+./ex3
+
+Saída:
+Antes da ordenacao:
+5
+7
+1
+3
+4
+0
+6
+3
+8
+9
+Depois da ordenacao:
+5
+7
+1
+3
+4
+0
+6
+3
+8
+9
+
+Reflexão:
+Observando a saída do programa,vemos que o vetor foi ordenado somente dentro do processo filho, pois dentro do processo pai ele se manteve o mesmo. Assim como foi ilustrado no exercício anterior, isso acontece porque as áreas de memória foram copiadas na criação do processo, inclusive o buffer inteiro do vetor, o que mantém a memória dos processos independente, logo, os processos não usam o mesmo vetor.*/
+
+4)
+	->	Código do programa principal:
+	
+#include <stdio.h>
+#include <unistd.h>
+#include <wait.h>
+#include <stdlib.h>
+
+int main() {
+	
+	int pid, status;
+	
+	char str1[] = "ex4Aux";
+	char str2[] = "echo";
+	char str3[] = "jessica eh legal";
+	
+	char *const argv1[] = {str1, NULL};
+	char *const argv2[] = {str2, str3, NULL};
+	
+	pid = fork();
+	
+	if (pid != 0) {	/* Processo pai */
+		
+		execv("/usr/bin/echo", argv2);
+		printf("Depois do exec do echo\n");
+		waitpid(pid, &status, 0);
+	} else {	/* Processo filho */
+		
+		execv("./ex4Aux", argv1);
+		printf("Depois do exec do programa auxiliar\n");
+		exit(0);
+	}
+	/* Apos filhos terminarem */
+	
+	return 0;
+}
+	
+	->	Código do programa auxiliar:
+
+#include <stdio.h>
+
+int main() {
+	
+	printf("Esse eh um programa auxiliar! EEEEE\n");	
+	
+	return 0;
+}
+
+/*Chamada:
+No terminal:
+gcc -Wall -o ex4Aux ex4Aux.c
+gcc -Wall -o ex4 ex4.c
+./ex4
+
+Saída:
+jessica eh legal
+Esse eh um programa auxiliar! EEEEE
+
+Reflexão:
+Aprendemos a usar a função execv onde, passando um programa diferente (executável), através de seu path e seus parâmetros, pode-se executá-lo como processo independente, finalizando o processo que o chamou, pois não ocorreu a impressão na tela que tentamos depois de chamar o exec em cada processo. Aprendemos também o path do executável do comando de terminal "echo" no Unix. */

@@ -1,0 +1,588 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+> Questão 1)
+
+Faça um programa que usa myallocate para alocar e  desalocar memória dinâmiamente. 
+
+	-> Código:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#define _GNU_SOURCE
+
+void *memorypool;
+
+void *myallocate(int n) {
+	return sbrk(n);
+}
+
+void initmemorypool(void) {
+	memorypool = sbrk(0);
+}
+
+void resetmemorypool(void) {
+	brk(memorypool);
+}
+
+int main() {
+	void* p1,* p2,* p3,* p4;
+	initmemorypool();
+	p1 = myallocate(sizeof(int));
+	p2 = myallocate(sizeof(int));
+	p3 = myallocate(sizeof(int));
+	resetmemorypool();
+	p4 = myallocate(0);
+	printf("%ld\n", (long) p1);
+	printf("%ld\n", (long) p2);
+	printf("%ld\n", (long) p3);
+	printf("%ld\n", (long) p4);
+	return 0;
+}
+
+	-> Terminal:
+
+[aluno@localhost 3_6]$ gcc -Wall -o ex1 ex1.c
+[aluno@localhost 3_6]$ ./ex1
+37933056
+37933060
+37933064
+37933056
+
+	-> Reflexão:
+
+Conferiu-se o funcionamento das funções sbrk e brk. Usa-se o sbrk(0) para salvar a posição atual do program break para, após ser alterado, poder restaurar o valor inicial a qualquer momento. Como esperado, alocou-se de 4 em 4 bytes no teste (tamanho do inteiro). Aprendemos também a ter cuidado ao usar a função printf ou outras juntamente com brk/brsk pois printf pode usar free/malloc e o heap de memória dinâmica fica corrompido se for acessado usando diretamente essas funções de alteração do program break.
+
+> Questão 2)
+
+Execute map-exemplo.c passando o nome de um arquivo como parâmetro. Qual foi a novidade? 
+
+	-> Código:
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+
+int main (int argc, char *argv[]) {
+	struct stat sb;
+	off_t len;
+	char *p;
+	int fd;
+	if (argc < 2) {
+		fprintf (stderr, "usage: %s <file>\n", argv[0]);
+		exit(1);
+	}
+	fd = open (argv[1], O_RDONLY);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+	if (fstat(fd, &sb) == -1) {
+		perror("fstat");
+		exit(1);
+	}
+	if (!S_ISREG (sb.st_mode)) {
+		fprintf(stderr, "%s is not a file\n", argv[1]);
+		exit(1);
+	}
+	p = mmap(0, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		exit(1);
+	}
+	if (close (fd) == -1) { 
+		perror("close");
+		exit(1);
+	}
+	for (len = 0; len < sb.st_size; len++) {
+		putchar (p[len]);
+	}
+	if (munmap(p, sb.st_size) == -1) {
+		perror("munmap");
+		exit(1);
+	}
+	return 0;
+}
+
+	-> Arquivo passado como parâmetro:
+
+Eu sou o arquivo 1!
+
+	-> Terminal:
+
+[aluno@localhost 3_6]$ gcc -Wall -o ex2 ex2.c
+[aluno@localhost 3_6]$ ./ex2 arq1.txt
+Eu sou o arquivo 1!
+
+	-> Reflexão:
+
+O programa executou como desejado. Funcionou de maneira não usual a como estamos acostumados, pois o conteúdo do arquivo foi impresso diretamente do vetor p (ou seja, da memória), após mesmo o descritor de arquivo ter sido fechado.
+
+
+> Questão 3)
+
+Modifique map-exemplo.c para: 
+a.Verificar quantas páginas de  memória o seu arquivo precisou
+b.Medir o  quão mais rápido foi a escrita do arquivo mapeado quando comparado com a E/S em disco. 
+Dica: use gettimeofday() 
+
+	-> Código:
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <math.h>
+#include <sys/time.h>
+
+int main (int argc, char *argv[]) {
+	struct stat sb;
+	off_t len;
+	char *p, c, *bufferArq;
+	int fd, i;
+	long pgsize, numpgs, elapsedTime;
+	struct timeval t0, t1;
+	
+	if (argc < 2) {
+		fprintf (stderr, "usage: %s <file>\n", argv[0]);
+		exit(1);
+	}
+	fd = open (argv[1], O_RDONLY);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+	if (fstat(fd, &sb) == -1) {
+		perror("fstat");
+		exit(1);
+	}
+	if (!S_ISREG (sb.st_mode)) {
+		fprintf(stderr, "%s is not a file\n", argv[1]);
+		exit(1);
+	}
+	pgsize = sysconf(_SC_PAGESIZE);
+	numpgs = (long) ceil((double) sb.st_size / pgsize);
+	printf("\nNumero de pags utilizadas pelo arquivo: %ld\n\n", numpgs);
+	
+	printf("Arquivo impresso por leitura do HD:\n\n");
+	
+	gettimeofday(&t0, NULL);
+	while(0 < read(fd, &c, sizeof(char))) {
+		putchar(c);
+	}
+	gettimeofday(&t1, NULL);
+	
+	elapsedTime = (t1.tv_sec - t0.tv_sec) * (long) 1e6 + (t1.tv_usec - t0.tv_usec);
+	printf("\nTempo de impressao de arquivo do HD: %ld microssegundos\n\n", elapsedTime);
+	
+	bufferArq = (char*) malloc(sizeof(char) * sb.st_size);
+	
+	printf("Arquivo impresso por leitura do HD de uma so vez:\n\n");
+	
+	lseek(fd, 0, SEEK_SET);
+	gettimeofday(&t0, NULL);
+	read(fd, bufferArq, sizeof(char) * sb.st_size);
+	for (i = 0; i < sb.st_size; i++) {
+		putchar(bufferArq[i]);
+	}
+	gettimeofday(&t1, NULL);
+	
+	elapsedTime = (t1.tv_sec - t0.tv_sec) * (long) 1e6 + (t1.tv_usec - t0.tv_usec);
+	printf("\nTempo de impressao de arquivo do HD de uma so vez: %ld microssegundos\n\n", elapsedTime);
+	
+	gettimeofday(&t0, NULL);
+	p = mmap(0, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	gettimeofday(&t1, NULL);
+	
+	elapsedTime = (t1.tv_sec - t0.tv_sec) * (long) 1e6 + (t1.tv_usec - t0.tv_usec);
+	printf("Tempo de mapeamento do arquivo para RAM: %ld microssegundos\n\n", elapsedTime);
+	
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		exit(1);
+	}
+	if (close (fd) == -1) {
+		perror("close");
+		exit(1);
+	}
+	
+	printf("Arquivo impresso por leitura do mapeamento da RAM:\n\n");
+	
+	gettimeofday(&t0, NULL);
+	for (len = 0; len < sb.st_size; len++) {
+		putchar(p[len]);
+	}
+	gettimeofday(&t1, NULL);
+	
+	elapsedTime = (t1.tv_sec - t0.tv_sec) * (long) 1e6 + (t1.tv_usec - t0.tv_usec);
+	printf("\nTempo de impressao de arquivo mapeado: %ld microssegundos\n", elapsedTime);
+	
+	if (munmap(p, sb.st_size) == -1) {
+		perror("munmap");
+		exit(1);
+	}
+	return 0;
+}
+
+	-> Arquivo passado como parâmetro:
+
+Eu sou o arquivo 1!
+
+	-> Terminal:
+
+[aluno@localhost 3_6]$ gcc -Wall -o ex3 ex3.c -lm
+[aluno@localhost 3_6]$ ./ex3 arq1.txt
+
+Numero de pags utilizadas pelo arquivo: 1
+
+Arquivo impresso por leitura do HD:
+
+Eu sou o arquivo 1!
+
+
+Tempo de impressao de arquivo do HD: 10 microssegundos
+
+Arquivo impresso por leitura do HD de uma so vez:
+
+Eu sou o arquivo 1!
+
+
+Tempo de impressao de arquivo do HD de uma so vez: 3 microssegundos
+
+Tempo de mapeamento do arquivo para RAM: 2 microssegundos
+
+Arquivo impresso por leitura do mapeamento da RAM:
+
+Eu sou o arquivo 1!
+
+
+Tempo de impressao de arquivo mapeado: 3 microssegundos
+
+	-> Reflexão:
+
+Verificamos a quantidade de páginas necessárias fazendo uma conta matemática simples com o número do tamanho da pág e tamanho do arquivo. Em nossos testes, tal como no exemplo acima, imprimir o arquivo mapeado foi sempre bem mais rápido do que imprimir pela leitura gradual por E/S, principalmente para arquivos maiores. Fizemos uns testes extras para descobrir que parte disso está envolvido no tempo necessário para mapear o arquivo e que ler o arquivo todo de uma única vez é bem mais rápido do que ler gradualmente. 
+
+> Questão 4)
+
+Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um). 
+
+	-> Código de ex4.1.c:
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <math.h>
+#include <sys/time.h>
+
+int main (int argc, char *argv[]) {
+	struct stat sb;
+	char *p;
+	int fd;
+	
+	if (argc < 2) {
+		fprintf (stderr, "usage: %s <file>\n", argv[0]);
+		exit(1);
+	}
+	fd = open (argv[1], O_RDWR);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+	if (fstat(fd, &sb) == -1) {
+		perror("fstat");
+		exit(1);
+	}
+	if (!S_ISREG (sb.st_mode)) {
+		fprintf(stderr, "%s is not a file\n", argv[1]);
+		exit(1);
+	}
+	
+	p = mmap(0, sb.st_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		exit(1);
+	}
+	if (close (fd) == -1) {
+		perror("close");
+		exit(1);
+	}
+	
+	
+	p[0]='g';	
+	p[1]='h';
+	p[2]='i';
+	if (munmap(p, sb.st_size) == -1) {
+		perror("munmap");
+		exit(1);
+	}
+	return 0;
+}
+
+
+	-> Código de ex4.2.c:
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <math.h>
+#include <sys/time.h>
+
+
+int main (int argc, char *argv[]) {
+	struct stat sb;
+	char *p;
+	int fd;
+	
+	if (argc < 2) {
+		fprintf (stderr, "usage: %s <file>\n", argv[0]);
+		exit(1);
+	}
+	fd = open (argv[1], O_RDWR);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+	if (fstat(fd, &sb) == -1) {
+		perror("fstat");
+		exit(1);
+	}
+	if (!S_ISREG (sb.st_mode)) {
+		fprintf(stderr, "%s is not a file\n", argv[1]);
+		exit(1);
+	}
+	
+	p = mmap(0, sb.st_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		exit(1);
+	}
+	if (close (fd) == -1) {
+		perror("close");
+		exit(1);
+	}
+	
+	while(1)
+	{
+		putchar(p[0]);
+		putchar(p[1]);
+		putchar(p[2]);
+	}
+	
+	if (munmap(p, sb.st_size) == -1) {
+		perror("munmap");
+		exit(1);
+	}
+	return 0;
+}
+
+
+	-> Arquivo passado como parâmetro:
+
+abc
+
+	-> Terminal 1:
+
+[rafael@localhost Lab9]$ gcc -Wall -o ex4.2 ex4.2.c
+[rafael@localhost Lab9]$ ./ex4.2 arq.txt
+abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc
+ghighighighighighighighighighighighighighighighighighighighighighighighighighighighi
+
+	-> Terminal 2:
+
+[rafael@localhost Lab9]$ gcc -Wall -o ex4.1 ex4.1.c
+[rafael@localhost Lab9]$ ./ex4.1 arq.txt
+
+	-> Reflexão:
+
+Fizemos uma implementação bem simples: um dos programas fica imprimindo em loop os 3 primeiros caracteres de um arquivo (terminal 1). O outro modifica os 3 primeiros caracteres para que o primeiro possa imprimir caracteres diferentes (terminal 2). Como esperado, o mapping foi sim compartilhado pela opção MAP_SHARED e quando se modificou os caracteres em um programa, a mudança foi instantâneo no programa que imprimia em loop.
+
+> Questão 5)
+
+Escreva um programa que faz um mapeamento de arquivo para memória e depois escreve novos caracteres no final do arquivo. O que voce precisa fazer para
+evitar um SegFault? 
+
+	-> Código:
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <math.h>
+#include <sys/time.h>
+
+#define NUM_CARACS 4096
+
+int main (int argc, char *argv[]) {
+	struct stat sb;
+	char *p;
+	off_t len;
+	int fd;
+	
+	if (argc < 2) {
+		fprintf (stderr, "usage: %s <file>\n", argv[0]);
+		exit(1);
+	}
+	fd = open (argv[1], O_RDWR);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+	if (fstat(fd, &sb) == -1) {
+		perror("fstat");
+		exit(1);
+	}
+	if (!S_ISREG (sb.st_mode)) {
+		fprintf(stderr, "%s is not a file\n", argv[1]);
+		exit(1);	
+	}
+	printf("%ld\n",sb.st_size);
+	p = mmap(0, sb.st_size + NUM_CARACS, PROT_WRITE, MAP_PRIVATE, fd, 0);
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		exit(1);
+	}
+	if (close (fd) == -1) {
+		perror("close");
+		exit(1);
+	}
+	for(len=sb.st_size;len<sb.st_size + NUM_CARACS;len++)
+	{
+		p[len]='b';
+	}
+	
+	if (munmap(p, sb.st_size + NUM_CARACS) == -1) {
+		perror("munmap");
+		exit(1);
+	}
+	return 0;
+}
+
+
+	-> Arquivo passado como parâmetro:
+
+abc
+
+	-> Terminal (resultado 1):
+
+[rafael@localhost Lab9]$ gcc -Wall -o ex5 ex5.c
+[rafael@localhost Lab9]$ ./ex5 arq.txt
+4
+
+	-> Terminal (resultado 2):
+
+[rafael@localhost Lab9]$ gcc -Wall -o ex5 ex5.c
+[rafael@localhost Lab9]$ ./ex5 arq.txt
+4
+Bus error (imagem do núcleo gravada)
+
+
+	-> Reflexão:
+
+A constante NUM_CARACS que criamos representa a quantidade de caracteres que é adicionada ao mapping do arquivo. Obtivemos êxito no uso do programa para valores de NUM_CARACS menores ou iguais a 4092 e falha de 4093 acima para o arquivo que inicialmente possui apenas a string "abc". Achamos que, como imprimimos o tamanho do arquivo de mapping, que era 4, qualquer valor acima de 4092 caracteres acrescentados faria o mapeamento ultrapassar uma página de memória, que já medimos e possui 4096 bytes. Assim, quando os caracteres acrescentados fizeram o mapeamento passar uma página, obtemos um erro. Quando não, funcionou normalmente.
+
+> Questão 6)
+
+O Linux também suporta uma função: void *mremap(void *addr, size_t old_sz, 
+size_t new_sz, unsigned long flags) // addr precisa estar alinhado com o início da página.
+Re-escreva o seu programa do item anterior usando mremap()  
+
+	-> Código:
+
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <math.h>
+#include <sys/time.h>
+
+#define NUM_CARACS 4097
+#define NUM_BYTES 50
+
+int main (int argc, char *argv[]) {
+	struct stat sb;
+	char *p,*p_remap;
+	off_t len;
+	int fd;
+	
+	if (argc < 2) {
+		fprintf (stderr, "usage: %s <file>\n", argv[0]);
+		exit(1);
+	}
+	fd = open (argv[1], O_RDWR);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+	if (fstat(fd, &sb) == -1) {
+		perror("fstat");
+		exit(1);
+	}
+	if (!S_ISREG (sb.st_mode)) {
+		fprintf(stderr, "%s is not a file\n", argv[1]);
+		exit(1);
+	}
+	
+	p = mmap(0, sb.st_size, PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		exit(1);
+	}
+
+	p_remap=mremap(p, sb.st_size , sb.st_size + NUM_BYTES, 0);
+	if (p_remap == MAP_FAILED) {
+		perror("remap");
+		exit(1);
+	}
+	if (close (fd) == -1) {
+		perror("close");
+		exit(1);
+	}
+	for(len=sb.st_size-1;len<sb.st_size+NUM_CARACS;len++)
+	{
+		p_remap[len]='z';
+	}
+	if (munmap(p_remap, sb.st_size+NUM_BYTES) == -1) 
+	{
+		perror("remap");
+		exit(1);
+	}	
+
+	if (munmap(p, sb.st_size) == -1) {
+		perror("munmap");
+		exit(1);
+	}
+	return 0;
+}
+
+	-> Arquivo passado como parâmetro:
+
+abc
+
+	-> Terminal:
+
+[rafael@localhost Lab9]$ gcc -Wall -o ex6 ex6.c
+[rafael@localhost Lab9]$ ./ex6 arq.txt
+
+	-> Reflexão:
+
+Como observamos, o teste que fizemos com essa questão, em detrimento da questão 5, acrescentou 4097 caracteres, que é garantidamente maior que o número de bytes de uma página, e não houve bug ou SegFault. Conclui-se que o melhor para adicionar elementos ao mapeamento é usar a função mremap, abrindo inicialmente o arquivo com seu tamanho original e depois acrescentando o que deseja-se acrescentar.

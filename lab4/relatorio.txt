@@ -1,0 +1,275 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+	-> Questão 5)
+
+Faça um programa que leia 2 números e 
+imprima o resultado das 4 operações básicas 
+sobre estes 2 números. 
+Verifique o que acontece se o 2º. número 
+da entrada for 0 (zero) 
+Capture o sinal de erro de floating point 
+(SIGFPE) e repita a experiência anterior 
+
+	-> Código:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+void capturei(int sinal) {
+	erro("Divisao por 0");
+}
+
+int main() {
+	int a, b;
+	if (-1 == (long)signal(SIGFPE, capturei)) {
+		erro("Instalacao de tratador inadequada");
+	}
+	printf("Digite dois numeros: ");
+	scanf(" %d %d", &a, &b);
+	printf("\na + b = %d\n", a + b);
+	printf("a - b = %d\n", a - b);
+	printf("a * b = %d\n", a * b);
+	printf("a / b = %d\n", a / b);
+	return 0;
+}
+	-> Terminal:
+
+[rafael@localhost lab4]$ gcc -Wall -o ex5 ex5.c
+[rafael@localhost lab4]$ ./ex5
+Digite dois numeros: 12 3
+
+a + b = 15
+a - b = 9
+a * b = 36
+a / b = 4
+[rafael@localhost lab4]$ ./ex5
+Digite dois numeros: 8 0
+
+a + b = 8
+a - b = 8
+a * b = 0
+Divisao por 0
+
+	-> Reflexão:
+	
+No programa nós capturamos o sinal emitido que ocorreu graças à divisão por 0 e o tratamos de modo a exibir uma mensagem na shell. Aprendemos que quando a flag de erro é ativada, o sinal SIGFPE fica constantemente sendo enviado, mesmo após ser tratada. Aprendemos também que tal sinal só é enviado para erro em operação com inteiros. Supomos que como float possui registradores diferente, possui também flags diferentes.
+
+	-> Questão 6)
+
+ Faça um programa para monitorar e informar o 
+preço de chamadas telefônicas. O programa 
+deverá ser executado em background. 
+O início e o término de uma chamada são  
+informados através dos sinais SIGUSR1 e 
+SIGUSR2, respectivamente. 
+O custo da ligação é de 2 centavos por 
+segundo, para ligações de até 1 minuto ou de 1 
+centavo por segundo a partir do 2º. minuto, ou 
+seja, uma ligação de 1m30s custa R$1,50. 
+
+	-> Código:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <time.h>
+
+#define EVER ;;
+
+time_t relogio;
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+void tratar(int sinal) {
+	float preco;
+	switch(sinal) {
+		case SIGUSR1:
+			printf("Inicio de chamada\n");
+			relogio = time(NULL);
+			break;
+		case SIGUSR2:
+			relogio = time(NULL) - relogio;
+			if ((int) relogio <= 60) {
+				preco = 2 * relogio;
+			}
+			else {
+				preco = relogio + 60;
+			}
+			preco /= 100;
+			printf("Fim de chamada. Tempo: %d segundos / Preco: %.2f centavos\n", (int) relogio, preco);
+			break;
+		default:
+			erro("inconsistencia");
+	}
+}
+
+int main() {
+	if (-1 == (long)signal(SIGUSR1, tratar)) {
+		erro("Nao instalado USR1\n");
+	}
+	if (-1 == (long)signal(SIGUSR2, tratar)) {
+		erro("Nao instalado USR2\n");
+	}
+	for(EVER);
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab4]$ gcc -Wall -o ex6 ex6.c
+[rafael@localhost lab4]$ ./ex6 &
+[1] 3232
+[rafael@localhost lab4]$ kill -s USR1 3232
+Inicio de chamada
+[rafael@localhost lab4]$ kill -s USR2 3232
+Fim de chamada. Tempo: 5 segundos / Preco: 0.10 centavos
+[rafael@localhost lab4]$ kill -s USR1 3232
+Inicio de chamada
+[rafael@localhost lab4]$ kill -s USR2 3232
+Fim de chamada. Tempo: 20 segundos / Preco: 0.40 centavos
+
+	-> Reflexão:
+
+Aprendemos a rodar programas em background, enviando sinais pela shell simultaneamente à sua execução. Aprendemos a medir diferenças de tempo com o time.h e experimentamos o uso dos sinais USR.
+
+	-> Questão 7)
+
+Elabore três programas
+I/O bound que não terminem (loop de msgs no vídeo). Elabore um programa que seja capaz
+de executar os 3 programas indicados anteriormente e que simule o compartilhamento da CPU entre 
+os 3 processos com escalonamento Round-Robin com uma fatia de tempo de 1 segundo para o 
+primeiro processo e de 2 segundos para os demais processos. Execute os programas e relate o que aconteceu
+
+	-> Código1:
+
+#include <stdio.h>
+
+#define EVER ;;
+
+int main() {
+	
+	for(EVER) {
+		printf("MARCO ");
+	}
+	return 0;
+}
+
+	-> Código2:
+
+#include <stdio.h>
+
+#define EVER ;;
+
+int main() {
+	
+	for(EVER) {
+		printf("POLO ");
+	}
+	return 0;
+}
+
+	-> Código3:
+
+#include <stdio.h>
+
+#define EVER ;;
+
+int main() {
+	
+	for(EVER) {
+		printf("T ");
+	}
+	return 0;
+}
+
+	-> Código principal:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <signal.h>
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	int i, pid[3];
+	
+	char* const argv0[] = {"./prog1", NULL};
+	char* const argv1[] = {"./prog2", NULL};
+	char* const argv2[] = {"./prog3", NULL};
+	
+	if ((pid[0] = fork()) < 0) {
+		erro("Processo nao criado");
+	}
+	else if (pid[0] == 0) {
+		execv("./prog1", argv0);
+	}
+	if ((pid[1] = fork()) < 0) {
+		erro("Processo nao criado");
+	}
+	else if (pid[1] == 0) {
+		execv("./prog2", argv1);
+	}
+	if ((pid[2] = fork()) < 0) {
+		erro("Processo nao criado");
+	}
+	else if (pid[2] == 0) {
+		execv("./prog3", argv2);
+	}
+	for(i = 0; i < 3; i++) {
+		if (-1 == kill(pid[i], SIGSTOP)) {
+			erro("Sinal de pausa nao enviado");
+		}
+	}
+	for(i = 0;; i++) {
+		int sono;
+		i %= 3;
+		switch(i) {
+			case 0:
+				sono = 1;
+				break;
+			case 1:
+				sono = 2;
+				break;
+			case 2:
+				sono = 2;
+				break;
+		}
+		if (-1 == kill(pid[i], SIGCONT)) {
+			erro("Sinal de pausa nao enviado");
+		}
+		if (-1 == kill(pid[(i+2)%3], SIGSTOP)) {
+			erro("Sinal de continuacao nao enviado");
+		}
+		sleep(sono);
+	}
+	
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab4]$ gcc -Wall -o prog1 prog1.c
+[rafael@localhost lab4]$ gcc -Wall -o prog2 prog2.c
+[rafael@localhost lab4]$ gcc -Wall -o prog3 prog3.c
+[rafael@localhost lab4]$ gcc -Wall -o ex7 ex7.c
+[rafael@localhost lab4]$ ./ex7
+[Em seguida, o programa imprimiu milhares de vezes "MARCO", seguido de vários "POLO" e por fim,
+vários "T". É impossível copiar para cá pois foram muitos, mas a quantidade de "MARCO" foi notavelmente menor que a dos outros dois.]
+
+	-> Reflexão:
+Usamos a função sleep para simular um escalonador, que só é ativado de tempo em tempo. O programa agiu imprimindo menos vezes "MARCO", pois havia uma fatia menor de tempo para a execução do primeiro programa. Apesar de experimentalmente isso não ter ocorrido, esperávamos que em algum momento, um dos programas que está esperando por um I/O (no caso o printf de uma letra) não fosse colocado na lista do escalonador real do Unix (por não estar ready), o que deixaria o sinal SIGSTOP que ele recebeu em espera também e consequentemente aconteceria alguma mistura entre as letras impressas por 2 programas diferentes. Cremos que isso não aconteceu pelo fato da impressão não ser lenta o suficiente para esse problema ocorrer.

@@ -1,0 +1,257 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+	-> Questão 1)
+
+Execute o programa 
+“ctrl-c.c”.  
+Digite Ctrl-C e Ctrl-\. Analise o resultado.
+Neste mesmo programa, remova os 
+comandos signal( ) e repita o teste anterior 
+observando os resultados. 
+
+	-> Código:
+
+#include<stdio.h>
+#include<signal.h>
+#include<stdlib.h>
+
+#define  EVER ;;
+void intHandler (int sinal);
+void quitHandler( int sinal);
+int main (void) 
+{ 
+	//void(*p)(int); // ponteiro para função que recebe intcomo  parâmetro 	
+	//p = signal(SIGINT, intHandler); 
+	//printf("Endereco do manipulador anterior %p\n",p); 
+	//p= signal(SIGQUIT, quitHandler); 
+	//printf("Enderecodo manipulador anterior %p\n", p); 
+	puts ("Ctrl-C desabilitado. Use Ctrl-\\ para terminar"); 
+	for(EVER); 
+}
+
+void intHandler(int sinal) 
+{ 
+	printf("Você pressionou Ctrl-C (%d) \n", sinal); 
+}
+void quitHandler (int sinal) 
+{ 
+	printf ("Terminando o processo...\n"); 
+	exit(0);
+}
+ 
+	-> Terminal1:
+
+[rafael@localhost lab3]$ gcc -Wall -o ex1 ex1.c
+[rafael@localhost lab3]$ ./ex1
+Endereco do manipulador anterior (nil)
+Enderecodo manipulador anterior (nil)
+Ctrl-C desabilitado. Use Ctrl-\ para terminar
+^CVocê pressionou Ctrl-C (2) 
+^\Terminando o processo...
+
+	-> Terminal2:
+
+[rafael@localhost lab3]$ gcc -Wall -o ex1 ex1.c
+[rafael@localhost lab3]$ ./ex1
+^C
+[rafael@localhost lab3]$ ./ex1
+^\Quit (imagem do núcleo gravada)
+
+
+	-> Reflexão:
+	
+Vamos analisar o resultado. Quando apertamos ctrl+C, o processo não fechou e apareceu a mensagem esperada, que estava sendo impressa pelo handler que tratava o sinal enviado pelo teclado. O ctrl+\ também entrou no handler esperado. Observamos que após comentarmos a "instalação" dos handlers, o ctrl+C e ctrl+\ funcionaram como esperado, encerrando o programa. Bjs Jéssica.
+
+	-> Questão 2)
+
+Tente fazer um programa para interceptar o 
+sinal SIGKILL. Você conseguiu? Explique. 
+
+	-> Código:
+
+#include<stdio.h>
+#include<signal.h>
+#include<stdlib.h>
+
+#define EVER ;;
+
+/*
+	"O que é imortal, não morre no final" - Sandy & Junior
+*/
+int main()
+{
+	signal(SIGKILL, SIG_IGN);
+	raise(SIGKILL);
+	for(EVER);
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab3]$ gcc -Wall -o ex2 ex2.c
+[rafael@localhost lab3]$ ./ex2
+Killed
+
+	-> Reflexão:
+
+Como observado pelo resultado do terminal, não foi possível interceptar o sinal kill pois mesmo após termos dado o comando de ele ser ignorado, ele não foi ignorado, como especificado pelo Unix, pois o programa cometeu suicídio com sucesso e abandonou esse mundo cruel e de vazio existencial.
+
+	-> Questão 3)
+
+Execute e explique o funcionamento de 
+filhocidio.c
+
+	-> Código:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <wait.h>
+
+void childhandler(int signo);
+int delay;
+int main  ( int argc ,  char   * argv []) {
+	pid_t pid;
+	char* const argv2[] = {argv[2], NULL};
+	signal (SIGCHLD, childhandler);
+	if  ((pid = fork()) < 0) {
+		fprintf (stderr, "Erro ao criar filho\n");
+		exit (-1);
+	}
+	if (pid == 0)  /* child */
+		execv(argv[2],argv2);  /* ou  sleep (3); */
+	else  { /* parent */
+		sscanf(argv[1], "%d", &delay); /* read delay from command line */
+		sleep(delay);
+	 	printf ("Program %s exceeded limit of %d seconds!\n", argv[1], delay);
+		kill(pid, SIGKILL);
+		sleep(1); /* necessary for SIGCHLD to arrive */
+	}
+	return 0;
+}
+
+void childhandler(int signo) { /* Executed if child dies before parent */
+	int status;
+	pid_t pid = wait(&status);  
+	printf("Child %d terminated within %d seconds with state %d.\n", pid, delay, status);
+	exit(0);
+}
+	-> Terminal:
+
+[rafael@localhost lab3]$ gcc -Wall -o ex3 ex3.c
+[rafael@localhost lab3]$ ./ex3 10 ./ex2
+Child 3183 terminated within 10 seconds with state 9.
+[rafael@localhost lab3]$ ./ex3 10 ./ex1
+Program ./ex1 exceeded limit of 10 seconds!
+Child 3191 terminated within 10 seconds with state 9.
+
+	-> Reflexão:
+
+O programa filhocidio exemplifica bem o envio automático do sinal SIGCHLD quando o processo se encerra e a função sleep(). Passamos 2 programas como parâmetros do filhocidio para testar seu tempo máximo de execução. Como o programa ./ex1 possuia um laço infinito e sua duração excedeu o limite estipulado (10 segundos), o filhocidio o matou. Como o programa ./ex2 se matava, sua duração foi pequena, menor que o limite estipulado (10 segundos). Seu fim enviou o sinal SIGCHLD pro filhocidio, que então anunciou seu encerramento.
+
+	-> Questão 4)
+
+Usando SIGSTOP e SIGCONT faça um 
+programa que crie 2 processos filho e alterne a 
+execução dos filhos. Após  10 trocas de 
+contexto, o processo pai mata os processos 
+filho.  
+OBS: Os processos filho são formados por loops 
+infinitos. 
+
+	-> Código:
+
+#include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
+#include <stdlib.h>
+
+#define EVER ;;
+#define TROCAS 10
+#define DELAY 1
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+void imprimeFilho1(int sinal) {
+	printf("OI EU SOU O FILHO 1\n");
+}
+
+void imprimeFilho2(int sinal) {
+	printf("OI EU SOU O FILHO 2\n");
+}
+
+int main() {
+	
+	pid_t pid1, pid2;
+	int i;
+	if ((pid1 = fork()) < 0) {
+		erro("Processo 1 não criado");
+	}
+	else if (pid1 == 0) {
+		signal(SIGCONT, imprimeFilho1);
+		for(EVER);
+	}
+	else {
+		if ((pid2 = fork()) < 0) {
+			erro("Processo 2 não criado");
+		}
+		else if (pid2 == 0) {
+			signal(SIGCONT, imprimeFilho2);
+			for(EVER);
+		}
+		else {
+			sleep(1);
+			for (i = 0; i < TROCAS+1; i++) {
+				pid_t start, stop;
+				if (i%2 == 0) {
+					start = pid1;
+					stop = pid2;
+				}
+				else {
+					start = pid2;
+					stop = pid1;
+				}
+				if (-1 == kill(stop, SIGSTOP)) {
+					erro("Processo imparavel");
+				}
+				if (-1 == kill(start, SIGCONT)) {
+					erro("Processo incomecavel");
+				}
+				sleep(DELAY);
+			}
+		}
+	}
+	if (-1 == kill(pid1, SIGKILL)) {
+		erro("Processo imortal");
+	}
+	if (-1 == kill(pid2, SIGKILL)) {
+		erro("Processo imortal");
+	}
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab3]$ gcc -Wall -o ex4 ex4.c
+[rafael@localhost lab3]$ ./ex4
+OI EU SOU O FILHO 1
+OI EU SOU O FILHO 2
+OI EU SOU O FILHO 1
+OI EU SOU O FILHO 2
+OI EU SOU O FILHO 1
+OI EU SOU O FILHO 2
+OI EU SOU O FILHO 1
+OI EU SOU O FILHO 2
+OI EU SOU O FILHO 1
+OI EU SOU O FILHO 2
+OI EU SOU O FILHO 1
+
+	-> Reflexão:
+
+Aprendemos a usar os sinais SIGSTOP e SIGCONT para pausar/resumir processos. Usamos um handler para o SIGCONT para anunciar que o processo foi resumido e notamos que a criação de tal handler não atrapalhou o funcionamento default do sinal de resumir o processo (por exemplo, no exercício 1, a criação de um handler para o SIGINT atrapalhou o default, que era encerrar o programa). Notamos que o uso de sinais é bem útil para sincronizar o funcionamento de processos possibilitando trocas de contexto entre eles.

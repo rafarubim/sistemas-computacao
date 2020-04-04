@@ -1,0 +1,203 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+	-> Questão 1)
+
+Faça um programa para criar dois processos 
+que se comunicam via pipe. O Pai lê do pipe 
+enquanto o filho escreve no pipe. Exiba o resultado 
+do que foi escrito e lido. 
+
+	-> Código:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <wait.h>
+
+void erro(const char* msg) {
+	printf("%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	
+	int pid, fd[2];
+	
+	if (pipe(fd) < 0) {
+		erro("Pipe incriavel");
+	}
+	
+	if ((pid = fork()) < 0) {
+		erro("Processo filho incriavel");
+	}
+	else if(pid != 0) {
+		char mensagem[20];
+		close(fd[1]);
+		wait(NULL);
+		read(fd[0], mensagem, 20);
+		printf("%s\n", mensagem);
+		close(fd[0]);
+	}
+	else {
+		close(fd[0]);
+		write(fd[1], "Teste", 6);
+		close(fd[1]);
+		exit(0);
+	}
+	
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab5]$ gcc -Wall -o ex1 ex1.c
+[rafael@localhost lab5]$ ./ex1
+Teste
+
+	-> Reflexão:
+	
+Aprendemos como utilizar pipes para dois processos compartilharem informações. Como os pipes trabalham com arquivos virtuais, são mais fáceis de usar do que a memória compartilhada, pois não compõe um tamanho fixo de informações enviadas. Apredemos também a bloquear a leitura/escrita no pipe com o close, permitindo uma comunição unidirecional entre processos. Tal como shm, também precisamos usar um método secundário de comunicar que uma informação foi transmitida (nesse caso, o wait).
+
+	-> Questão 2)
+
+Faça um programa para redirecionar a entrada e 
+a saída, lendo os dados de um arquivo e gerando 
+a saída em outro.
+
+	-> Código:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+void erro(const char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	
+	int arq1, arq2;
+	char c;
+	
+	if (-1 == (arq1 = open("./Arq1.txt", O_RDONLY))) {
+		erro("Arq1 inacessivel");
+	}
+	if (-1 == (arq2 = open("./Arq2.txt", O_WRONLY | O_CREAT | O_TRUNC, 511))) {
+		erro("Arq2 inacessivel e incriavel");
+	}
+	
+	dup2(arq1, 0);
+	dup2(arq2, 1);
+	
+	while (1 == scanf(" %c", &c)) {
+		printf("%c", c);
+	}
+
+	close(arq1);
+	close(arq2);
+	
+	return 0;
+}
+
+	-> Terminal:
+
+ARQUIVOS INICIAIS + CONTEÚDO:
+Arq1.txt: "Olar"
+
+TERMINAL:
+[rafael@localhost lab5]$ gcc -Wall -o ex2 ex2.c
+[rafael@localhost lab5]$ ./ex2
+
+ARQUIVOS FINAIS + CONTEÚDO:
+Arq1.txt: "Olar"
+Arq2.txt: "Olar"
+
+	-> Reflexão:
+
+Não precisamos criar um pipe porque não usamos 2 processos. Criamos 2 descritores de arquivos para gerenciar 2 arquivos (um preexistente, com um texto que já criamos, e outro que seria criado como cópia do primeiro). Para redirecionar a entrada/saída padrões do unix, usamos o dup2. Aprendemos que o dup2 duplicará nossos descritores para os índices 0 e 1, que por padrão são a entrada do buffer do teclado e do terminal. Assim o scanf e printf, que trabalham nos buffers padrões stdin e stdout, passarão a trabalhar nos arquivos que abrimos. Aprendemos também a usar as flags do open para especificar se já queremos um arquivo aberto. Aprendemos a especificar a segurança de um aqruivo criado também.
+
+	-> Questão 3)
+
+Faça um programa para criar um pipe e 
+executar dois processos que são utilitários do Unix 
+que se comuniquem através do pipe criado (a shell 
+faz isso). 
+
+	-> Código:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <wait.h>
+
+void erro(const char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(1);
+}
+
+int main(int argc, char** argv) {
+	
+	int fd[2], pid;
+	
+	if (argc != 3) {
+		erro("Uso do programa: ./programa <Comando1> <Comando2>");
+	}
+	
+	if (0 > pipe(fd)) {
+		erro("Pipe incriavel");
+	}
+	
+	if ((pid = fork()) < 0) {
+		erro("Processo filho incriavel");
+	}
+	else if (pid == 0) {
+		close(fd[0]);
+		dup2(fd[1], 1);
+		system(argv[1]);
+		close(fd[1]);
+		exit(0);
+	}
+	else {
+		close(fd[1]);
+		dup2(fd[0], 0);
+		wait(NULL);
+		system(argv[2]);
+		close(fd[0]);
+	}
+	
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab5]$ gcc -Wall -o ex3 ex3.c
+[rafael@localhost lab5]$ ./ex3
+Uso do programa: ./programa <Comando1> <Comando2>
+[rafael@localhost lab5]$ ./ex3 ls sort
+Arq1.txt
+Arq2.txt
+ex1
+ex1.c
+ex2
+ex2.c
+ex3
+ex3.c
+relatorio.txt
+[rafael@localhost lab5]$ ls | sort
+Arq1.txt
+Arq2.txt
+ex1
+ex1.c
+ex2
+ex2.c
+ex3
+ex3.c
+relatorio.txt
+
+	-> Reflexão:
+
+Criamos um pipe para permitir a troca de informações entre a entrada/saída de dois programas do Unix. Usamos o dup2 para permir que a saída de um fosse a entrada do pipe e a entrada do outro fosse a saída do pipe. A saída do segundo comando do Unix continuou sendo o console, e a entrada do primeiro comando continuou sendo o buffer do teclado, pois fizemos o redirecionamento separadamente em cada processo, não antes de dar o fork. O nosso programa recebe então 2 comandos Unix como parâmetros, chama o primeiro e redireciona a saída para o buffer de entrada do próximo, que é então chamado e imprime o resultado na tela. Chamamos os dois comandos com a função system. Um bom exemplo é o uso dos comandos ls + sort para demonstrar o pipe.

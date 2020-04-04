@@ -1,0 +1,322 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+	-> Questão 1)
+
+Abra duas seções de terminais
+Na primeira, execute um programa que fica em 
+loop lendo de uma FIFO para depois escrever na 
+saída padrão (tela)
+Na segunda, execute um programa que fica lendo 
+da entrada padrão (teclado) e depois escreve na 
+mesma FIFO
+
+	-> Código 1:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define NOME_FIFO "pipe"
+
+void erro(char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	int fifo;
+	char c;
+	if (0 > access(NOME_FIFO, F_OK)) {
+		if (mkfifo(NOME_FIFO, 0660) != 0) {
+			erro("Falha ao criar pipe");
+		}
+	}
+	if (0 > (fifo = open(NOME_FIFO, O_WRONLY))) {
+		erro("Falha ao abrir pipe");
+	}
+	
+	for(;;) {
+		while(0 >= read(0, &c, sizeof(char)));
+		write(fifo, &c, sizeof(char));
+	}
+	
+	close(fifo);
+	return 0;
+}
+
+	-> Código 2:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define NOME_FIFO "pipe"
+
+void erro(char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(1);
+}
+
+int main() {
+	int fifo;
+	char c;
+	if (0 > access(NOME_FIFO, F_OK)) {
+		if (mkfifo(NOME_FIFO, 0660) != 0) {
+			erro("Falha ao criar pipe");
+		}
+	}
+	if (0 > (fifo = open(NOME_FIFO, O_RDONLY))) {
+		erro("Falha ao abrir pipe");
+	}
+	
+	for(;;) {
+		while(0 >= read(fifo, &c, sizeof(char)));
+		write(1, &c, sizeof(char));
+	}
+	
+	close(fifo);
+	return 0;
+}
+
+	-> Terminal 1:
+
+[rafael@localhost ~]$ cd '/home/rafael/inf1019/lab7' 
+[rafael@localhost lab7]$ gcc -Wall -o ex1.1 ex1.1.c
+[rafael@localhost lab7]$ gcc -Wall -o ex1.2 ex1.2.c
+[rafael@localhost lab7]$ ./ex1.1
+Ola! Esta eh uma mensagem. Yaaaay!
+
+	-> Terminal 2:
+
+[rafael@localhost ~]$ cd '/home/rafael/inf1019/lab7' 
+[rafael@localhost lab7]$ ./ex1.2
+Ola! Esta eh uma mensagem. Yaaaay!
+
+	-> Reflexão:
+
+Nós aprendemos a usar named pipes para fazer a comunicação entre dois processos que não são necessariamente pai e filho. No nosso caso, usamos a função close, mas ela nunca chega a ser chamada pois os programas rodam em loop infinito. Rodando cada processo em um terminal, escrevemos a mensagem no terminal 1. Descobrimos que é apenas após o enter que o terminal envia o input do teclado para o stdin. Após terminar a mensagem e apertar enter, ela foi corretamente impressa no terminal 2, como esperado. Descobrimos também que se um dos programas é fechado durante execução, o que fecha seu lado da pipe, a operação read passa a retornar 0 ao invés de bloquear em EOF e a operação write passa a gerar um sinal SIGPIPE que encerra o programa. Isso significa que quando fechávamos o programa leitor, o escritor parava de funcionar mas quando fechávamos o escritor, o leitor continuava funcionando. Porém não fazemos ideia do porque isso acontece.
+
+	-> Questão 2)
+
+Escreva um programa que primeiro cria uma FIFO e em seguida cria dois processos
+filho que escrevem uma string na FIFO.O pai dá um waitpid em seguida lê as 
+strings desse FIFO e exibe na tela
+
+	-> Código:
+
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <wait.h>
+#define FIFO "minhafifo"
+#define OPENMODE (O_RDONLY | O_NONBLOCK)
+
+int main()
+{
+	int fifo,pid,pid2;
+	char mensagem1[]= "Melancia";
+	char mensagem2[]=" sem caroco\n";
+	if(access(FIFO,F_OK)==-1)
+	{
+		if(mkfifo(FIFO,S_IRUSR | S_IWUSR) !=0)
+		{
+			fprintf(stderr,"Erro ao criar FIFO %s\n",FIFO);
+			return -1;
+		}
+	}
+	if((pid=fork())<0)
+	{
+		fprintf(stderr,"Erro ao criar filho 1\n");
+		return -1;
+	}
+	if (pid == 0) // filho 1
+	{
+		if((fifo=open(FIFO,O_WRONLY))<0)
+		{
+			fprintf(stderr,"Erro ao abrir fifo %s\n",FIFO);
+			return -1;
+		}
+		write(fifo,mensagem1,strlen(mensagem1));
+		close(fifo);		
+	}
+	else // pai
+	{
+		if((pid2=fork())<0)
+		{
+			fprintf(stderr,"Erro ao criar filho 2\n");
+			return -1;
+		}
+		if(pid2 == 0) // filho 2
+		{
+			if((fifo=open(FIFO,O_WRONLY))<0)
+			{
+				fprintf(stderr,"Erro ao abrir fifo %s\n",FIFO);
+				return -1;
+			}
+			sleep(1); // para o filho 2 imprimir depois e a mensagem ficar bonita
+			write(fifo,mensagem2,strlen(mensagem2));
+			close(fifo);
+		}
+		else // pai
+		{
+			char ch;
+			if((fifo=open(FIFO,OPENMODE))<0)
+			{
+				fprintf(stderr,"Erro ao abrir fifo %s\n",FIFO);
+				return -1;
+			}
+			wait(NULL);
+			wait(NULL);
+			while(read(fifo, &ch, sizeof(ch)) > 0) {
+				putchar(ch);
+			}
+		}
+	} // pai
+	close(fifo);
+	return 0;
+}
+	-> Terminal:
+
+[rafael@localhost lab7]$ gcc -Wall -o ex2 ex2.c
+[rafael@localhost lab7]$ ./ex2
+Melancia sem caroco
+
+	-> Reflexão:
+
+Aprendemos a usar o fifo em processos pai e filho, usando o open sem espera (NONBLOCK) quando possível. Fizemos o open após o fork pois o pai abriria o arquivo para leitura e os filhos para escrita, então os opens seriam diferentes. Não fizemos nada para controlar a ordem que os filhos escrevem no pipe, então colocamos um sleep de um segundo no segundo filho apenas para que o primeiro filho muitíssimo provavelmente escrevesse primeiro e a string final ficou melhor. O programa imprimiu as duas strings como esperado.
+
+	-> Questão 3)
+
+Escreva um servidor e um cliente usando duas FIFOs: uma para enviar strings para o 
+servidor, e outra para transmitir as respostas de volta para os clientes. O servidor
+deverá rodar em background e transformar cada palavra recebida de minusculas para
+maiúsculas. Obs: execute os seus clientes em terminais diferentes. 
+
+	-> Código Servidor:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define FIFO_ENTRADA "EntradaServidor"
+#define FIFO_SAIDA "SaidaServidor"
+
+void erro(const char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(-1);
+}
+
+int main() {
+	int fdFifoEntrada, fdFifoSaida;
+	if (0 != access(FIFO_ENTRADA, F_OK)) {
+		if (0 != mkfifo(FIFO_ENTRADA, 0660)) {
+			erro("Falha ao criar fifo de entrada do servidor");
+		}
+	}
+	if (0 != access(FIFO_SAIDA, F_OK)) {
+		if (0 != mkfifo(FIFO_SAIDA, 0660)) {
+			erro("Falha ao criar fifo de saida do servidor");
+		}
+	}
+	if (0 > (fdFifoEntrada = open(FIFO_ENTRADA, O_RDONLY))) {
+		erro("Falha ao acessar fifo de entrada do servidor");
+	}
+	if (0 > (fdFifoSaida = open(FIFO_SAIDA, O_WRONLY))) {
+		erro("Falha ao acessar fifo de saida do servidor");
+	}
+	for(;;) {
+		char c;
+		while(0 >= read(fdFifoEntrada, &c, sizeof(char)));
+		c += 'A' - 'a';
+		write(fdFifoSaida, &c, sizeof(char));
+	}
+	
+	close(fdFifoEntrada);
+	close(fdFifoSaida);
+	return 0;
+}
+
+	-> Código Cliente:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define FIFO_ENTRADA "EntradaServidor"
+#define FIFO_SAIDA "SaidaServidor"
+
+void erro(const char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(-1);
+}
+
+int main() {
+	int fdFifoEntrada, fdFifoSaida;
+	if (0 != access(FIFO_ENTRADA, F_OK)) {
+		if (0 != mkfifo(FIFO_ENTRADA, 0660)) {
+			erro("Falha ao criar fifo de entrada do servidor");
+		}
+	}
+	if (0 != access(FIFO_SAIDA, F_OK)) {
+		if (0 != mkfifo(FIFO_SAIDA, 0660)) {
+			erro("Falha ao criar fifo de saida do servidor");
+		}
+	}
+	if (0 > (fdFifoEntrada = open(FIFO_ENTRADA, O_WRONLY))) {
+		erro("Falha ao acessar fifo de entrada do servidor");
+	}
+	if (0 > (fdFifoSaida = open(FIFO_SAIDA, O_RDONLY))) {
+		erro("Falha ao acessar fifo de saida do servidor");
+	}
+	for(;;) {
+		char c;
+		//while para garantir que mesmo que caracteres que não são letras, tais como \n,
+		//desbloqueiem o processo do read de um caracter válido a se converter.
+		while(1) {
+			if (0 < read(0, &c, sizeof(char)) && c >= 'a' && c <= 'z') {
+				write(fdFifoEntrada, &c, sizeof(char));
+				break;
+			}
+		}
+		if (0 < read(fdFifoSaida, &c, sizeof(char))) {
+			write(1, &c, sizeof(char));
+		}
+	}
+	
+	close(fdFifoEntrada);
+	close(fdFifoSaida);
+	return 0;
+}
+
+	-> Terminal 1:
+
+[rafael@localhost lab7]$ gcc -Wall -o ex3.servidor ex3.servidor.c
+[rafael@localhost lab7]$ gcc -Wall -o ex3.cliente ex3.cliente.c
+[rafael@localhost lab7]$ ./ex3.servidor &
+[1] 7858
+[rafael@localhost lab7]$ ./ex3.cliente
+aloaloalo
+ALOALOALO
+
+	-> Terminal 2:
+
+[rafael@localhost lab7]$ ./ex3.cliente
+abcdefg
+ABCDEFG
+
+	-> Reflexão:
+
+O servidor que fizemos simplesmente lê de uma pipe o caracter recebido, transforma-o em maiúsculo e devolve através da outra pipe. O cliente é um programa único, que pode ser rodado em mais de um processo para se comunicar com o servidor. O cliente fica travado na leitura de um caracter do stdin. Quando o caracter é lido, ele fica travado até receber o retorno do pipe do servidor, com a letra maiúscula, imprimindo-a. Então, ele volta a esperar um input do stdin. Descobrimos através disso que o fifo não permite dois programas de lerem o mesmo dado que chega nele: o primeiro programa que lê avança o cursor corrente do arquivo, impossibilitando o outro processo de ler o que já foi lido. Descobrimos pelo manual que o read no linux mais recente é uma operação atômica, permitindo 2 processos de tentarem ler o pipe ao mesmo tempo sem bugs.

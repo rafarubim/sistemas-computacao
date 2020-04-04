@@ -1,0 +1,655 @@
+Nomes:
+Rafael Rubim	- 1511068
+Gabriel Busquim - 1510549
+
+	-> Questão 1)
+
+Execute o programa Corrida de Sapo algumas vezes e 
+analise os resultados sobre a ordem de chegada dos 
+sapos.
+Obs: compile com a opção –lpthread
+
+	-> Código:
+
+#include <stdio.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
+#define NUM_THREADS      5
+#define PULO_MAXIMO      100
+#define DESCANSO_MAXIMO  1
+#define DISTANCIA_PARA_CORRER 100
+
+static int classificacao = 1;
+static int cont = 0;
+
+void *Correr(void  *sapo);
+
+int main() {
+	pthread_t threads[NUM_THREADS];
+	long t;
+	classificacao = 1;
+	printf("Corrida iniciada ... \n");
+	for(t=0;t < NUM_THREADS;t++)  {
+		pthread_create(&threads[t], NULL, Correr, (void *) t);
+	}
+	for(t=0;t < NUM_THREADS; t++)  pthread_join(threads[t],NULL);
+	printf("\n Acabou!!\n%d sapos pularam!\n", cont);
+	pthread_exit(NULL);
+}
+
+void *Correr(void  *sapo) { 
+	int pulos = 0;
+	int distanciaJaCorrida = 0;
+	while (distanciaJaCorrida <= DISTANCIA_PARA_CORRER) { 
+		int pulo = rand() % PULO_MAXIMO;
+		distanciaJaCorrida += pulo;
+		pulos++;
+		printf("Sapo %ld pulou\n", (long) sapo);
+		int descanso = rand() % DESCANSO_MAXIMO;
+		sleep(descanso);
+	}
+	printf("Sapo %ld chegou na posicao %d com %d pulos\n", (long)sapo, 
+	classificacao, pulos);
+	cont++;
+	classificacao++;
+	pthread_exit(NULL);
+} 
+
+	-> Terminal:
+
+[rafael@localhost lab8]$ gcc -Wall -o ex1 ex1.c -lpthread
+[rafael@localhost lab8]$ ./ex1
+Corrida iniciada ... 
+Sapo 1 pulou
+Sapo 2 pulou
+Sapo 4 pulou
+Sapo 0 pulou
+Sapo 3 pulou
+Sapo 2 pulou
+Sapo 1 pulou
+Sapo 4 pulou
+Sapo 0 pulou
+Sapo 3 pulou
+Sapo 2 chegou na posicao 1 com 2 pulos
+Sapo 1 chegou na posicao 1 com 2 pulos
+Sapo 4 chegou na posicao 3 com 2 pulos
+Sapo 0 chegou na posicao 4 com 2 pulos
+Sapo 3 chegou na posicao 5 com 2 pulos
+
+ Acabou!!
+5 sapos pularam!
+
+
+	-> Reflexão:
+
+Após diversas execuções do programa, pôde-se ver que diversas vezes houve um problema com o número
+de classificação impresso e acredita-se que poderia haver um problema com o número de sapos que pularam, no final. Esse problema está evidente em uma das execuções, que colocamos como exemplo do terminal acima. Isso ocorre pela condição de corrida das threads que podem dar problema ao alterar o valor das variáveis globais simultaneamente (ou imprimir enquanto se muda). Aprendemos a usar void* como parâmetro da função da thread.
+
+	-> Questão 2)
+
+Usando mutex, modifique o programa Corrida de Sapo 
+para que o problema identificado anteriormente não 
+ocorra.
+
+	-> Código:
+
+#include <stdio.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
+#define NUM_THREADS      5
+#define PULO_MAXIMO      100
+#define DESCANSO_MAXIMO  1
+#define DISTANCIA_PARA_CORRER 100
+
+static int classificacao = 1;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static int cont = 0;
+
+void *Correr(void  *sapo);
+
+int main() {
+	pthread_t threads[NUM_THREADS];
+	long t;
+	classificacao = 1;
+	printf("Corrida iniciada ... \n");
+	for(t=0;t < NUM_THREADS;t++)  {
+		pthread_create(&threads[t], NULL, Correr, (void *) t);
+	}
+	for(t=0;t < NUM_THREADS; t++)  pthread_join(threads[t],NULL);
+	printf("\n Acabou!!\n%d sapos pularam!\n", cont);
+	pthread_exit(NULL);
+}
+
+void *Correr(void  *sapo) { 
+	int pulos = 0;
+	int distanciaJaCorrida = 0;
+	while (distanciaJaCorrida <= DISTANCIA_PARA_CORRER) { 
+		int pulo = rand() % PULO_MAXIMO; 
+		distanciaJaCorrida += pulo; 
+		pulos++; 
+		printf("Sapo %ld pulou\n", (long) sapo); 
+		int descanso = rand() % DESCANSO_MAXIMO; 
+		sleep(descanso); 
+	}
+	pthread_mutex_lock(&lock);
+	printf("Sapo %ld  chegou na posicao %d com %d pulos\n", (long)sapo, 
+	classificacao, pulos);
+	cont++;
+	classificacao++;
+	pthread_mutex_unlock(&lock);
+	pthread_exit(NULL);
+} 
+
+	-> Terminal:
+
+[rafael@localhost lab8]$ gcc -Wall -o ex2 ex2.c -lpthread
+[rafael@localhost lab8]$ ./ex2
+Corrida iniciada ... 
+Sapo 4 pulou
+Sapo 3 pulou
+Sapo 2 pulou
+Sapo 1 pulou
+Sapo 0 pulou
+Sapo 4 pulou
+Sapo 3 pulou
+Sapo 2 pulou
+Sapo 1 pulou
+Sapo 0 pulou
+Sapo 4  chegou na posicao 1 com 2 pulos
+Sapo 3  chegou na posicao 2 com 2 pulos
+Sapo 2  chegou na posicao 3 com 2 pulos
+Sapo 1  chegou na posicao 4 com 2 pulos
+Sapo 0  chegou na posicao 5 com 2 pulos
+
+ Acabou!!
+5 sapos pularam!
+
+	-> Reflexão:
+
+Para revolver o problema, usou-se a simples implementação de mutex para criar uma região crítica nos momentos de impressão/alteração de variáveis globais. Executamos o programa várias vezes e não houve nenhum problema com as posições, o que acontecia com frequência antes da implementação. Aprendemos a usar o Mutex Initializer com variáveis estáticas.
+
+	-> Questão 3)
+
+Usando threads, escreva um programa C que implemente o 
+problema do produtor/consumidor. O produtor deve produzir 
+dados (números inteiros pseudo-aleatórios) a cada 1 segundo 
+colocando-os em uma fila (buffer, implementação circular). O 
+consumidor deve retirar dados da fila a cada 2 segundos. O 
+tamanho máximo da fila deve ser de 8 elementos (MAXFILA) e 
+tanto o produtor como o consumidor devem produzir/consumir 
+64 elementos (números inteiros de 1 a 64, por exemplo) 
+evitando condições de corrida. Variáveis compartilhadas entre 
+threads são simplesmente variáveis globais. 
+
+	-> Código:
+
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <stdio.h>
+
+#define MAXFILA 8
+#define MAXRAND 64
+#define TOTPRODCONS 64
+
+int fila[MAXFILA];
+int iniFila = 0;
+int fimFila = -1;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t nao_cheio = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t nao_vazio = PTHREAD_COND_INITIALIZER;
+
+int avancarIndiceCircular(int, int);
+int filaEstaCheia();
+int filaEstaVazia();
+void* produtor(void*);
+void* consumidor(void*);
+
+int main() {
+	pthread_t prod, cons;
+	
+	pthread_create(&prod, NULL, produtor, NULL);
+	pthread_create(&cons, NULL, consumidor, NULL);
+	
+	pthread_join(prod, NULL);
+	pthread_join(cons, NULL);
+	
+	return 0;
+}
+
+void* produtor(void* parm) {
+	int i;
+	for(i = 0; i < TOTPRODCONS; i++, sleep(1)) {
+		int idxProxProd;
+		
+		/* Fechar acesso ao vetor para produzir */
+		pthread_mutex_lock(&mutex);
+		
+		/* Testar se a fila está cheia e o produtor terá que esperar */
+		if (1 == filaEstaCheia()){
+			/* Esperar até ela deixar de ser cheia */
+			pthread_cond_wait(&nao_cheio, &mutex);
+		}
+		/* Após o wait, a fila pode ter ficado vazia ou não. Porém
+		há garantia que ela não está cheia. Logo, pode-se produzir: */
+		
+		/* Obter posição para produzir: */
+		if (1 == filaEstaVazia()) {
+				/* Se está vazia */
+			/* Produzir no inicio da fila */
+			idxProxProd = iniFila;
+			/* Atualizar tamanho da fila para após a produção */
+			fimFila = iniFila;
+			/* Liberar quem estava esperando ela ficar não vazia,
+			agora que 1 elemento vai ser produzido */
+			pthread_cond_signal(&nao_vazio);
+		}
+		/* Se a fila não está vazia */
+		else {
+				/* Se não está vazia */
+			/* Obter próxima posição de produção após o final da fila */
+			idxProxProd = avancarIndiceCircular(fimFila, MAXFILA);
+			/* Atualizar tamanho da fila para após a produção */
+			fimFila = avancarIndiceCircular(fimFila, MAXFILA);
+		}
+		
+		/* Produzir número aleatório */
+		fila[idxProxProd] = rand() % MAXRAND;
+		printf("PROD: Produzido: %d\n", fila[idxProxProd]);
+		
+		/* Liberar acesso ao vetor */
+		pthread_mutex_unlock(&mutex);
+	}
+	
+	pthread_exit(NULL);
+}
+
+void* consumidor(void* parm) {
+	int i;
+	for(i = 0; i < TOTPRODCONS; i++, sleep(2)) {		
+		/* Fechar acesso ao vetor para consumir */
+		pthread_mutex_lock(&mutex);
+		
+		/* Se a fila esta vazia */
+		if (1 == filaEstaVazia()) {
+			/* Esperar ficar nao vazia */
+			pthread_cond_wait(&nao_vazio, &mutex);
+		}
+		
+		/* Se a fila esta cheia */
+		if (1 == filaEstaCheia()) {
+			/* Liberar para quem estava esperando ficar não cheia,
+			agora que 1 elemento vai ser consumido */
+			pthread_cond_signal(&nao_cheio);
+		}
+		
+		/* Consumir primeiro item da fila */
+		printf("CONS: Consumido: %d\n", fila[iniFila]);
+		
+		/* Se só havia um elemento */
+		if (iniFila == fimFila) {
+			/* Marcar fila como vazia */
+			fimFila = -1;
+		}
+		
+		/* Retirar elemento consumido da fila */
+		iniFila = avancarIndiceCircular(iniFila, MAXFILA);
+		
+		/* Liberar acesso ao vetor */
+		pthread_mutex_unlock(&mutex);
+	}
+	
+	pthread_exit(NULL);
+}
+
+int avancarIndiceCircular(int idx, int maxVet) {
+	idx = idx + 1;
+	if (idx >= maxVet) {
+		idx = 0;
+	}
+	return idx;
+}
+
+/*
+	Função: filaEstaCheia
+	Retorna 1 se a fila estiver cheia,
+	Retorna 0 caso não possua elementos ou não esteja cheia
+*/
+int filaEstaCheia() {
+	/* Se a fila está não vazia */
+	if (0 == filaEstaVazia()) {
+		int idxProx;
+		/* Obter próxima posição após o final da fila */
+		idxProx = avancarIndiceCircular(fimFila, MAXFILA);
+		
+		/* Se ver se esta posição é o início da fila,
+		se sim então ela está cheia */
+		if (idxProx == iniFila) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+	Função: filaEstaVazia
+	Retorna 1 se a fila não tiver elementos,
+	Retorna 0 caso contrário
+*/
+int filaEstaVazia() {
+	if (fimFila == -1) {
+		return 1;
+	}
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab8]$ gcc -Wall -o ex3 ex3.c -lpthread
+[rafael@localhost lab8]$ ./ex3
+PROD: Produzido: 39
+CONS: Consumido: 39
+PROD: Produzido: 6
+CONS: Consumido: 6
+PROD: Produzido: 41
+PROD: Produzido: 51
+CONS: Consumido: 41
+PROD: Produzido: 17
+PROD: Produzido: 63
+CONS: Consumido: 51
+PROD: Produzido: 10
+PROD: Produzido: 44
+CONS: Consumido: 17
+PROD: Produzido: 41
+PROD: Produzido: 13
+CONS: Consumido: 63
+PROD: Produzido: 58
+PROD: Produzido: 43
+CONS: Consumido: 10
+PROD: Produzido: 50
+PROD: Produzido: 59
+CONS: Consumido: 44
+PROD: Produzido: 35
+PROD: Produzido: 6
+CONS: Consumido: 41
+PROD: Produzido: 60
+CONS: Consumido: 13
+PROD: Produzido: 2
+CONS: Consumido: 58
+PROD: Produzido: 20
+CONS: Consumido: 43
+PROD: Produzido: 56
+
+[...]
+
+PROD: Produzido: 33
+CONS: Consumido: 52
+PROD: Produzido: 61
+CONS: Consumido: 20
+PROD: Produzido: 28
+CONS: Consumido: 17
+PROD: Produzido: 7
+CONS: Consumido: 14
+CONS: Consumido: 2
+CONS: Consumido: 52
+CONS: Consumido: 1
+CONS: Consumido: 33
+CONS: Consumido: 61
+CONS: Consumido: 28
+CONS: Consumido: 7
+
+	-> Reflexão:
+
+Descobrimos o que faz uma variável de condição e sua relação com um mutex. O cond_wait é útil para pausar uma thread dentro de uma região crítica. Isso também poderia ser feito por um semáforo, porém o cond_wait, já que é usado dentro de uma região crítica, também libera o mutex associado à variável de condição, efetivamente liberando a região crítica para outras threads, uma vez que a thread que estava na região crítica foi pausada. O wait só liberará a pausa após: a variável de condição receber um sinal para ser liberada e a região crítica estar novamente disponível (como se após o wait ocorresse um mutex_lock). O cond_signal libera pelo menos uma thread que estava pausada. Se ele foi usado após um lock, a liberação efetiva só ocorrerá após um unlock. Descobrimos que a variável de condição é útil quando se está em uma região crítica porém precisa-se que outras threads entrem nas próprias regiões críticas primeiro. Porém, já que após o wait, outras threads passaram por suas regiões críticas, então muitas variáveis globais podem ter se alterado e nem tudo que foi calculado antes do wait ser usado permanecerá igual. Então, alguma coisa pode ter de ser recalculada, mesmo que havia sido calculada dentro da própria região crítica, mas antes do wait. Como o signal libera a variável de condição mas não libera o mutex, descobrimos que o signal pode ser dado em qualquer ponto de uma região crítica, desde que a liberação efetiva de quem estava esperando deva ocorrer no final da região crítica. Os testes executaram com sucesso. É possível ver que no início há um consumo a cada duas produções e após a fila ficar cheia, uma produção após cada consumo (quando se libera espaço para produção). No final, há os 8 consumos finais da fila.
+
+	-> Questão 4)
+
+Modifique o programa anterior, para que haja 2 (ou mais) 
+threads consumidor e 2 (ou mais) threads produtor. O que muda 
+em relação ao uso do mutex e da variável de condição?
+
+	-> Código:
+
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <stdio.h>
+
+#define MAXFILA 8
+#define MAXRAND 64
+#define TOTPRODCONS 64
+#define SLEEPPROD 1
+#define SLEEPCONS 2
+#define NUMPRODS 2
+#define NUMCONS 2
+
+int fila[MAXFILA];
+int iniFila = 0;
+int fimFila = -1;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t nao_cheio = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t nao_vazio = PTHREAD_COND_INITIALIZER;
+
+int avancarIndiceCircular(int, int);
+int filaEstaCheia();
+int filaEstaVazia();
+void* produtor(void*);
+void* consumidor(void*);
+
+int main() {
+	pthread_t prod[NUMPRODS], cons[NUMCONS];
+	long i;
+	
+	for (i = 0; i < NUMPRODS; i++) {
+		pthread_create(&prod[i], NULL, produtor, (void*) i+1);
+	}
+	
+	for (i = 0; i < NUMCONS; i++) {
+		pthread_create(&cons[i], NULL, consumidor, (void*) i+1);
+	}
+	
+	for (i = 0; i < NUMPRODS; i++) {
+		pthread_join(prod[i], NULL);
+	}
+	for (i = 0; i < NUMCONS; i++) {
+		pthread_join(cons[i], NULL);
+	}
+	
+	return 0;
+}
+
+void* produtor(void* num) {
+	int i;
+	for(i = 0; i < TOTPRODCONS; i++, sleep(SLEEPPROD)) {
+		int idxProxProd;
+		
+		/* Fechar acesso ao vetor para produzir */
+		pthread_mutex_lock(&mutex);
+		
+		/* Testar se a fila está cheia e o produtor terá que esperar */
+		while (1 == filaEstaCheia()) {
+			/* Esperar até ela deixar de ser cheia */
+			pthread_cond_wait(&nao_cheio, &mutex);
+		}
+		/* Após o wait, a fila pode ter ficado vazia ou não. Porém
+		há garantia que ela não está cheia. Logo, pode-se produzir: */
+		
+		/* Obter posição para produzir: */
+		if (1 == filaEstaVazia()) {
+				/* Se está vazia */
+			/* Produzir no inicio da fila */
+			idxProxProd = iniFila;
+			/* Atualizar tamanho da fila para após a produção */
+			fimFila = iniFila;
+			/* Liberar quem estava esperando ela ficar não vazia,
+			agora que 1 elemento vai ser produzido */
+			pthread_cond_signal(&nao_vazio);
+		}
+		/* Se a fila não está vazia */
+		else {
+				/* Se não está vazia */
+			/* Obter próxima posição de produção após o final da fila */
+			idxProxProd = avancarIndiceCircular(fimFila, MAXFILA);
+			/* Atualizar tamanho da fila para após a produção */
+			fimFila = avancarIndiceCircular(fimFila, MAXFILA);
+		}
+		
+		/* Produzir número aleatório */
+		fila[idxProxProd] = rand() % MAXRAND;
+		printf("PROD %ld: Produzido: %d\n", (long) num,fila[idxProxProd]);
+		
+		/* Liberar acesso ao vetor */
+		pthread_mutex_unlock(&mutex);
+	}
+	
+	pthread_exit(NULL);
+}
+
+void* consumidor(void* num) {
+	int i;
+	for(i = 0; i < TOTPRODCONS; i++, sleep(SLEEPCONS)) {		
+		/* Fechar acesso ao vetor para consumir */
+		pthread_mutex_lock(&mutex);
+		
+		/* Se a fila esta vazia */
+		while (1 == filaEstaVazia()) {
+			/* Esperar ficar nao vazia */
+			pthread_cond_wait(&nao_vazio, &mutex);
+		}
+		
+		/* Se a fila esta cheia */
+		if (1 == filaEstaCheia()) {
+			/* Liberar para quem estava esperando ficar não cheia,
+			agora que 1 elemento vai ser consumido */
+			pthread_cond_signal(&nao_cheio);
+		}
+		
+		/* Consumir primeiro item da fila */
+		printf("CONS %ld: Consumido: %d\n", (long) num, fila[iniFila]);
+		
+		/* Se só havia um elemento */
+		if (iniFila == fimFila) {
+			/* Marcar fila como vazia */
+			fimFila = -1;
+		}
+		
+		/* Retirar elemento consumido da fila */
+		iniFila = avancarIndiceCircular(iniFila, MAXFILA);
+		
+		/* Liberar acesso ao vetor */
+		pthread_mutex_unlock(&mutex);
+	}
+	
+	pthread_exit(NULL);
+}
+
+int avancarIndiceCircular(int idx, int maxVet) {
+	idx = idx + 1;
+	if (idx >= maxVet) {
+		idx = 0;
+	}
+	return idx;
+}
+
+/*
+	Função: filaEstaCheia
+	Retorna 1 se a fila estiver cheia,
+	Retorna 0 caso não possua elementos ou não esteja cheia
+*/
+int filaEstaCheia() {
+	/* Se a fila está não vazia */
+	if (0 == filaEstaVazia()) {
+		int idxProx;
+		/* Obter próxima posição após o final da fila */
+		idxProx = avancarIndiceCircular(fimFila, MAXFILA);
+		
+		/* Se ver se esta posição é o início da fila,
+		se sim então ela está cheia */
+		if (idxProx == iniFila) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+	Função: filaEstaVazia
+	Retorna 1 se a fila não tiver elementos,
+	Retorna 0 caso contrário
+*/
+int filaEstaVazia() {
+	if (fimFila == -1) {
+		return 1;
+	}
+	return 0;
+}
+
+	-> Terminal:
+
+[rafael@localhost lab8]$ gcc -Wall -o ex4 ex4.c -lpthread
+[rafael@localhost lab8]$ ./ex4
+PROD 2: Produzido: 39
+CONS 2: Consumido: 39
+PROD 1: Produzido: 6
+CONS 1: Consumido: 6
+PROD 2: Produzido: 41
+PROD 1: Produzido: 51
+CONS 2: Consumido: 41
+CONS 1: Consumido: 51
+PROD 2: Produzido: 17
+PROD 1: Produzido: 63
+PROD 2: Produzido: 10
+PROD 1: Produzido: 44
+CONS 2: Consumido: 17
+CONS 1: Consumido: 63
+PROD 2: Produzido: 41
+PROD 1: Produzido: 13
+PROD 2: Produzido: 58
+PROD 1: Produzido: 43
+CONS 2: Consumido: 10
+CONS 1: Consumido: 44
+PROD 2: Produzido: 50
+PROD 1: Produzido: 59
+PROD 2: Produzido: 35
+PROD 1: Produzido: 6
+CONS 2: Consumido: 41
+CONS 1: Consumido: 13
+PROD 2: Produzido: 60
+PROD 1: Produzido: 2
+CONS 2: Consumido: 58
+CONS 1: Consumido: 43
+PROD 2: Produzido: 20
+PROD 2: Produzido: 56
+CONS 2: Consumido: 50
+CONS 1: Consumido: 59
+PROD 1: Produzido: 27
+PROD 2: Produzido: 40
+CONS 2: Consumido: 35
+CONS 1: Consumido: 6
+
+[...]
+
+PROD 1: Produzido: 49
+PROD 1: Produzido: 43
+CONS 2: Consumido: 28
+CONS 1: Consumido: 59
+PROD 1: Produzido: 49
+PROD 1: Produzido: 51
+CONS 2: Consumido: 40
+CONS 1: Consumido: 25
+CONS 2: Consumido: 15
+CONS 1: Consumido: 21
+CONS 2: Consumido: 49
+CONS 1: Consumido: 43
+CONS 1: Consumido: 49
+CONS 2: Consumido: 51
+
+	-> Reflexão:
+
+O código que fizemos do problema 3 foi adaptado para um número arbitrário de produtores e consumidores através de um vetor de threads na main. Apenas com essa alteração, não notou-se problemas adicionais na produção/consumo dessas threads. Porém, nos testes em que deveria-se esperar por uma variável de condição, trocou-se os ifs por whiles. Fizemos isso pois acreditamos que poderia haver algum problema caso mais de um produtor/consumidor estivessem em um wait: se uma variável de condição fosse liberada para as duas (como um sinal avisando que a fila não está mais cheia e um produtor pode produzir), se uma rodar primeiro (apesar de ambas serem liberadas, só uma roda em região crítica por vez) a outra ainda pode considerar que a variável de condição está liberada, sem considerar que a execução da que rodou primeiro influenciou na variável de condição (um produtor pode produzir tornando a fila cheia de novo. Como o outro havia recebido o sinal de não-cheio junto, acha que pode rodar sem problemas, sem considerar que a fila está novamente cheia). O while resolve isso, pois garante que após o fim de um wait, a condição da variável de condição tenha realmente sido resolvida. Os testes executaram com sucesso.

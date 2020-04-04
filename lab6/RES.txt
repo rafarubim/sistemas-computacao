@@ -1,0 +1,4 @@
+[rafael@localhost lab6]$ gcc -Wall -o ex2 ex2.c
+[rafael@localhost lab6]$ ./ex2
+abcdefghijklmnop*qrstuvwxyzabcdef*ghijklmnopqrstuv*wxyzabcdefghijkl*mnopqrstuvwxyzab*cdefghijklmnopqr*stuvwxyzabcdefgh*ijklmnopqrstuvwx*yzabcdefghijklmn*opqrstuvwxyzabcd*
+
